@@ -22,6 +22,7 @@ add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
 target_compile_options(${PROJECT_NAME} PRIVATE 
   -Wall
   -Wextra
+  -Wswitch-enum
   -Wshadow
   -Wno-c23-extensions
   -fno-omit-frame-pointer
