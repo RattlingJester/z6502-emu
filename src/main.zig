@@ -67,13 +67,18 @@ const CPU = struct {
 };
 
 pub fn main() void {
+    var cycles: u8 = 1;
+
     var cpu = CPU{};
     cpu.reset();
 
     cpu.memory[cpu.PC] = 0xA9;
     cpu.memory[cpu.PC + 1] = 10;
 
-    cpu.cycle();
+    while (cycles != 0) {
+        cpu.cycle();
+        cycles -= 1;
+    }
 
     std.log.info("CPU A register: {}", .{cpu.A});
 }
