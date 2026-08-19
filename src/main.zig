@@ -47,8 +47,7 @@ const CPU = struct {
     pub fn execute(self: *@This(), i: Instr) void {
         switch (i) {
             Instr.LDA_IM => {
-                const op = self.read_mem(self.PC);
-                self.A = op;
+                self.A = self.read_mem(self.PC);
                 self.update_status();
             },
 
