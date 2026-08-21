@@ -1,4 +1,4 @@
-const Opcodes = @import("instructions.zig").Opcodes;
+const Opcodes = @import("root.zig").Opcodes;
 
 pub fn RomBuilder(comptime size: usize) type {
     return struct {
