@@ -23,7 +23,7 @@ pub fn CPU(comptime Bus: type) type {
     return struct {
         const Self = @This();
 
-        PC: u16 = 0xFFFC,
+        PC: u16 = Bus.RESET_VECTOR,
 
         A: u8 = 0,
         X: u8 = 0,
@@ -341,6 +341,17 @@ pub fn CPU(comptime Bus: type) type {
 
                     break :blk 6;
                 },
+
+                Opcode.BRK_IMPL => blk: {
+                    self.push_word(self.PC);
+                    self.push_byte(self.status);
+
+                    self.PC = Bus.IRQ_VECTOR;
+                    self.set_flag(.BREAK, true);
+
+                    break :blk 7;
+                },
+
                 else => {
                     log.err("Instruction {} (0x{X}) is not handled", .{ op, op });
                     self.print_state();
@@ -370,20 +381,20 @@ pub fn CPU(comptime Bus: type) type {
         pub fn print_stack(self: *const Self) void {
             log.info("--- Stack Trace (SP: 0x{X:02}) ---", .{self.SP});
 
-            var current_sp = self.SP + 1;
-            const stack_start = Bus.STACK_START;
-
-            if (self.SP >= stack_start) {
-                log.info("  [Stack Empty]", .{});
+            if (self.SP == Bus.STACK_START) {
+                log.info("[Stack Empty]", .{});
                 return;
             }
 
-            while (current_sp <= stack_start) : (current_sp +%= 1) {
-                const absolute_addr: u16 = (0x0100 + @as(u16, current_sp & 0xFF));
-                const value = self.read_byte(absolute_addr);
+            const start_addr: u16 = self.SP;
+            const end_addr: u16 = Bus.STACK_START;
 
-                log.info("  Addr: 0x{X:04} -> Value: 0x{X:02}", .{
-                    absolute_addr,
+            for (start_addr..end_addr) |i| {
+                const addr: u16 = @intCast(Bus.STACK_START + i);
+                const value = self.read_byte(addr);
+
+                log.info("Addr: 0x{X:04} -> Value: 0x{X:02}", .{
+                    addr,
                     value,
                 });
             }

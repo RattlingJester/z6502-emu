@@ -1,10 +1,10 @@
 const Opcode = @import("root.zig").Opcode;
 
-pub fn RomBuilder(comptime size: usize) type {
+pub fn RomBuilder(comptime Bus: type) type {
     return struct {
         const Self = @This();
 
-        bytes: [size]u8 = @splat(0),
+        bytes: [Bus.MEM_SIZE]u8 = @splat(0),
         pos: u16 = 0,
 
         pub fn org(self: *Self, addr: u16) *Self {
@@ -31,13 +31,21 @@ pub fn RomBuilder(comptime size: usize) type {
 
         pub fn reset_vector(self: *Self, addr: u16) *Self {
             const saved = self.pos;
-            self.pos = 0xFFFC;
+            self.pos = Bus.RESET_VECTOR;
             _ = self.word(addr);
             self.pos = saved;
             return self;
         }
 
-        pub fn build(self: *Self) [size]u8 {
+        pub fn irq_vector(self: *Self, addr: u16) *Self {
+            const saved = self.pos;
+            self.pos = Bus.IRQ_VECTOR;
+            _ = self.word(addr);
+            self.pos = saved;
+            return self;
+        }
+
+        pub fn build(self: *Self) [Bus.MEM_SIZE]u8 {
             return self.bytes;
         }
     };
