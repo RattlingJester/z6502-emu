@@ -1,4 +1,4 @@
-pub const Opcodes = enum(u8) {
+pub const Opcode = enum(u8) {
     // ADC - Add with Carry
     ADC_IM = 0x69,
     ADC_ZP = 0x65,
