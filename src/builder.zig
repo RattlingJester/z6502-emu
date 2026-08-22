@@ -1,4 +1,5 @@
-const Opcode = @import("root.zig").Opcode;
+const root = @import("root.zig");
+const Op = root.Op;
 
 pub fn RomBuilder(comptime Bus: type) type {
     return struct {
@@ -25,7 +26,7 @@ pub fn RomBuilder(comptime Bus: type) type {
             return self;
         }
 
-        pub fn op(self: *Self, o: Opcode) *Self {
+        pub fn op(self: *Self, o: Op) *Self {
             return self.byte(@intFromEnum(o));
         }
 

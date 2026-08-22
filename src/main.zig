@@ -43,7 +43,7 @@ const rom = blk: {
 };
 
 pub fn main() void {
-    var execute_cycles: i32 = 17;
+    var execute_cycles: i32 = 8;
     var elapsed_cycles: u8 = 0;
 
     var bus = MemoryBus{ .ram = rom };
@@ -52,7 +52,7 @@ pub fn main() void {
     cpu.reset();
 
     while (execute_cycles > 0) {
-        elapsed_cycles = cpu.tick();
+        elapsed_cycles = cpu.step();
         execute_cycles -= @intCast(elapsed_cycles);
     }
 
@@ -61,4 +61,5 @@ pub fn main() void {
     }
 
     cpu.print_state();
+    cpu.print_stack();
 }
