@@ -164,7 +164,7 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.read_byte(addr);
                     self._adc(operand);
 
-                    const extra: u8 = if (page_crossed(addr, addr)) 1 else 0;
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
                     break :blk 4 + extra;
                 },
                 .ADC_ABS_Y => blk: {
@@ -174,7 +174,7 @@ pub fn CPU(comptime Bus: type) type {
 
                     self._adc(operand);
 
-                    const extra: u8 = if (page_crossed(addr, addr)) 1 else 0;
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
                     break :blk 4 + extra;
                 },
                 .ADC_IND_X => blk: {
@@ -196,7 +196,7 @@ pub fn CPU(comptime Bus: type) type {
 
                     const extra: u8 = if (page_crossed(base, target)) 1 else 0;
 
-                    break :blk 6 + extra;
+                    break :blk 5 + extra;
                 },
 
                 .AND_IM => blk: {
@@ -233,7 +233,7 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.read_byte(addr);
                     self._and(operand);
 
-                    const extra: u8 = if (page_crossed(addr, addr)) 1 else 0;
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
                     break :blk 4 + extra;
                 },
                 .AND_ABS_Y => blk: {
@@ -242,7 +242,7 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.read_byte(addr);
                     self._and(operand);
 
-                    const extra: u8 = if (page_crossed(addr, addr)) 1 else 0;
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
                     break :blk 4 + extra;
                 },
                 .AND_IND_X => blk: {
@@ -406,7 +406,7 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.read_byte(addr);
                     self._cmp(self.A, operand);
 
-                    const extra: u8 = if (page_crossed(base, self.PC)) 1 else 0;
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
                     break :blk 4 + extra;
                 },
 
@@ -416,7 +416,7 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.read_byte(addr);
                     self._cmp(self.A, operand);
 
-                    const extra: u8 = if (page_crossed(base, self.PC)) 1 else 0;
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
                     break :blk 4 + extra;
                 },
 
@@ -437,7 +437,7 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.read_byte(target);
                     self._cmp(self.A, operand);
 
-                    const extra: u8 = if (page_crossed(base, self.PC)) 1 else 0;
+                    const extra: u8 = if (page_crossed(base, target)) 1 else 0;
                     break :blk 5 + extra;
                 },
 
@@ -477,12 +477,8 @@ pub fn CPU(comptime Bus: type) type {
                     break :blk 4;
                 },
 
-                .BIT_ZP => blk: {
-                    break :blk undefined;
-                },
-                .BIT_ABS => blk: {
-                    break :blk undefined;
-                },
+                .BIT_ZP => @panic("BIT_ZP is not implemented"),
+                .BIT_ABS => @panic("BIT_ABS is not implemented"),
 
                 .BRK_IMPL => blk: {
                     self.push_word(self.PC);
@@ -572,7 +568,7 @@ pub fn CPU(comptime Bus: type) type {
                 else => {
                     log.err("Instruction {} (0x{X}) is not handled", .{ op, op });
                     self.print_state();
-                    unreachable;
+                    @panic("");
                 },
             };
         }
@@ -621,12 +617,12 @@ pub fn CPU(comptime Bus: type) type {
         }
 
         inline fn _adc(self: *Self, operand: u8) void {
-            const sum = self.A + operand + self.get_flag(.CARRY);
+            const sum: u16 = @as(u16, self.A) + @as(u16, operand) + self.get_flag(.CARRY);
             self.set_flag(.CARRY, sum > 0xFF);
             const overflow = ((self.A ^ sum) & (operand ^ sum) & 1 << 7) != 0;
             self.set_flag(.OVERFLOW, overflow);
 
-            self.A = sum;
+            self.A = @truncate(sum);
             self.set_flag(.ZERO, self.A == 0);
             self.set_flag(.NEGATIVE, (self.A & 1 << 7) != 0);
         }
@@ -650,14 +646,14 @@ pub fn CPU(comptime Bus: type) type {
 
         // Returns cycle count to add
         inline fn _bnc(self: *Self, condition: bool) u8 {
-            const offset = self.fetch_byte();
+            const offset: i8 = @bitCast(self.fetch_byte());
 
             if (condition) {
                 const old_PC = self.PC;
-                self.PC = old_PC +% offset;
+                // Handle negative offsets
+                self.PC = @bitCast(@as(i16, @bitCast(old_PC)) +% offset);
 
                 const extra: u8 = if (page_crossed(old_PC, self.PC)) 1 else 0;
-
                 return 3 + extra;
             }
 
