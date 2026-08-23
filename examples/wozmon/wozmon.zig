@@ -4,6 +4,8 @@ const log = std.log.scoped(.wozmon);
 
 const rom = @embedFile("out/wozmon.bin");
 
+const Cpu = emu.CPU(Bus, .{});
+
 const Bus = struct {
     const Self = @This();
 
@@ -40,7 +42,7 @@ const Bus = struct {
             },
             0xD011 => {
                 // If we have a key waiting, set Bit 7 high for Wozmon
-                return if (self.next_key != null) 0x80 else 0x00;
+                return if (self.next_key != null) 1 << 7 else 0x00;
             },
             0xD013 => return self.dsp_cr,
             else => return self.ram[addr],
@@ -52,7 +54,7 @@ const Bus = struct {
             0xD013 => self.dsp_cr = value,
             0xD012 => {
                 // Print once DSPCR has switched into data-register mode (bit 2 set).
-                if ((self.dsp_cr & 1 << 3) != 0) {
+                if ((self.dsp_cr & (1 << 2)) != 0) {
                     // Convert to 7 bit ASCII character
                     const ascii_char = value & 0x7F;
 
@@ -86,14 +88,24 @@ pub fn main(init: std.process.Init) !void {
     var bus = Bus.init(io);
     bus.ram = rom.*;
 
-    var cpu = emu.CPU(Bus, .{}).init(&bus);
+    var cpu = Cpu.init(&bus);
     cpu.reset();
 
-    const task = io.async(keyboard_listener, .{ io, &bus });
-    defer task.cancel(io);
+    var kb_task = io.async(keyboard_listener, .{ io, &bus });
+    defer kb_task.cancel(io) catch {};
+
+    const CYCLES = 1000;
 
     while (true) {
-        _ = cpu.step();
+        var cycles_executed: u32 = 0;
+
+        while (cycles_executed < CYCLES) {
+            const cycles = cpu.step();
+            cycles_executed += cycles;
+        }
+
+        // Doing 1ms sleep every 1000 cycles gets us 1Mhz clock (not counting OS overhead)
+        try io.sleep(.fromMilliseconds(1), .awake);
     }
 }
 

@@ -3,7 +3,7 @@
 
 
 ; Page 0 Variables
-
+.segment "ZEROPAGE"
 XAML            = $24           ;  Last "opened" location Low
 XAMH            = $25           ;  Last "opened" location High
 STL             = $26           ;  Store address Low
@@ -13,15 +13,15 @@ H               = $29           ;  Hex value parsing High
 YSAV            = $2A           ;  Used to see if hex value is given
 MODE            = $2B           ;  $00=XAM, $7F=STOR, $AE=BLOCK XAM
 
-
 ; Other Variables
-
+.segment "BSS"
 IN              = $0200         ;  Input buffer to $027F
+
+.segment "IO"
 KBD             = $D010         ;  PIA.A keyboard input
 KBDCR           = $D011         ;  PIA.A keyboard control register
 DSP             = $D012         ;  PIA.B display output register
 DSPCR           = $D013         ;  PIA.B display control register
-
 
 .segment "CODE"
 RESET:          CLD             ; Clear decimal arithmetic mode.
