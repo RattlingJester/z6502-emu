@@ -2,7 +2,9 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
+    const optimize = b.standardOptimizeOption(.{
+        .preferred_optimize_mode = .Debug,
+    });
 
     const lib_mod = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
@@ -16,6 +18,18 @@ pub fn build(b: *std.Build) void {
         .name = "6502-emu",
         .root_module = lib_mod,
         .linkage = .static,
+    });
+
+    const tests_mod = b.createModule(.{
+        .root_source_file = b.path("src/tests.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .strip = false,
+    });
+
+    const tests = b.addTest(.{
+        .root_module = tests_mod,
+        .name = "tests",
     });
 
     const exe_mod = b.createModule(.{
@@ -37,6 +51,7 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(exe);
+    b.installArtifact(tests);
 
     const run = b.addRunArtifact(exe);
 
