@@ -1,12 +1,11 @@
-pub const root = @This();
-
+const std = @import("std");
 const opcodes = @import("opcodes.zig");
+const log = std.log.scoped(.emulator);
 
 pub const RomBuilder = @import("builder.zig").RomBuilder;
 pub const Op = opcodes.Op;
 
-const std = @import("std");
-const log = std.log.scoped(.emulator);
+var LAST_OP: Op = undefined;
 
 pub const StatusFlag = enum(u8) {
     CARRY = 1 << 0,
@@ -44,7 +43,7 @@ pub fn CPU(comptime Bus: type) type {
             self.X = 0;
             self.Y = 0;
 
-            self.SP = Bus.STACK_START;
+            self.SP = Bus.STACK_RESET;
             self.status = 0b00110100;
         }
 
@@ -130,6 +129,7 @@ pub fn CPU(comptime Bus: type) type {
 
         /// Returns number of cycles it took to execute the instruction
         pub fn execute(self: *Self, op: Op) u8 {
+            LAST_OP = op;
             return switch (op) {
                 .ADC_IM => blk: {
                     const operand = self.fetch_byte();
@@ -325,6 +325,19 @@ pub fn CPU(comptime Bus: type) type {
                     break :blk 2 + extra;
                 },
 
+                .BIT_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    self._bit(operand);
+                    break :blk 3;
+                },
+                .BIT_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    self._bit(operand);
+                    break :blk 4;
+                },
+
                 .BMI_REL => blk: {
                     const condition = self.get_flag(.NEGATIVE) == 1;
                     const extra = self._bnc(condition);
@@ -340,6 +353,17 @@ pub fn CPU(comptime Bus: type) type {
                     const extra = self._bnc(condition);
                     break :blk 2 + extra;
                 },
+
+                .BRK_IMPL => blk: {
+                    self.push_word(self.PC);
+                    self.push_byte(self.status);
+
+                    self.PC = self.read_word(Bus.IRQ_VECTOR);
+                    self.set_flag(.BREAK, true);
+
+                    break :blk 7;
+                },
+
                 .BVC_REL => blk: {
                     const condition = self.get_flag(.OVERFLOW) == 0;
                     const extra = self._bnc(condition);
@@ -444,50 +468,250 @@ pub fn CPU(comptime Bus: type) type {
                 .CPX_IM => blk: {
                     const operand = self.fetch_byte();
                     self._cmp(self.X, operand);
+
                     break :blk 2;
                 },
                 .CPX_ZP => blk: {
                     const addr = self.fetch_byte();
                     const operand = self.read_byte(addr);
                     self._cmp(self.X, operand);
+
                     break :blk 3;
                 },
                 .CPX_ABS => blk: {
                     const addr = self.fetch_word();
                     const operand = self.read_byte(addr);
                     self._cmp(self.X, operand);
+
                     break :blk 4;
                 },
 
                 .CPY_IM => blk: {
                     const operand = self.fetch_byte();
                     self._cmp(self.Y, operand);
+
                     break :blk 2;
                 },
                 .CPY_ZP => blk: {
                     const addr = self.fetch_byte();
                     const operand = self.read_byte(addr);
                     self._cmp(self.Y, operand);
+
                     break :blk 3;
                 },
                 .CPY_ABS => blk: {
                     const addr = self.fetch_word();
                     const operand = self.read_byte(addr);
                     self._cmp(self.Y, operand);
+
                     break :blk 4;
                 },
 
-                .BIT_ZP => @panic("BIT_ZP is not implemented"),
-                .BIT_ABS => @panic("BIT_ABS is not implemented"),
+                .DEC_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    const result = self._dec(operand);
+                    self.write_byte(addr, result);
 
-                .BRK_IMPL => blk: {
-                    self.push_word(self.PC);
-                    self.push_byte(self.status);
+                    break :blk 5;
+                },
+                .DEC_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._dec(operand);
+                    self.write_byte(addr, result);
 
-                    self.PC = Bus.IRQ_VECTOR;
-                    self.set_flag(.BREAK, true);
+                    break :blk 6;
+                },
+                .DEC_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    const result = self._dec(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+                .DEC_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._dec(operand);
+                    self.write_byte(addr, result);
 
                     break :blk 7;
+                },
+                .DEX_IMPL => blk: {
+                    const result = self.X -% 1;
+                    self.X = result;
+
+                    self.set_flag(.ZERO, result == 0);
+                    self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+                    break :blk 2;
+                },
+                .DEY_IMPL => blk: {
+                    const result = self.Y -% 1;
+                    self.Y = result;
+
+                    self.set_flag(.ZERO, result == 0);
+                    self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+                    break :blk 2;
+                },
+
+                .EOR_IM => blk: {
+                    const operand = self.fetch_byte();
+                    self._eor(operand);
+
+                    break :blk 2;
+                },
+                .EOR_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    self._eor(operand);
+
+                    break :blk 3;
+                },
+                .EOR_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    self._eor(operand);
+
+                    break :blk 4;
+                },
+                .EOR_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    self._eor(operand);
+
+                    break :blk 4;
+                },
+                .EOR_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    self._eor(operand);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+                .EOR_ABS_Y => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.Y;
+                    const operand = self.read_byte(addr);
+                    self._eor(operand);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+                .EOR_IND_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const target = self.read_word_zp(addr);
+                    const operand = self.read_byte(target);
+                    self._eor(operand);
+
+                    break :blk 6;
+                },
+                .EOR_IND_Y => blk: {
+                    const operand_addr = self.fetch_byte();
+                    const base = self.read_word_zp(operand_addr);
+                    const target = base +% self.Y;
+                    const operand = self.read_byte(target);
+                    self._eor(operand);
+
+                    const extra: u8 = if (page_crossed(base, target)) 1 else 0;
+                    break :blk 5 + extra;
+                },
+
+                .INC_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    const result = self._inc(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 5;
+                },
+                .INC_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._inc(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+                .INC_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    const result = self._inc(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+                .INC_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._inc(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 7;
+                },
+                .INX_IMPL => blk: {
+                    const result = self.X +% 1;
+                    self.X = result;
+
+                    self.set_flag(.ZERO, result == 0);
+                    self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+                    break :blk 2;
+                },
+                .INY_IMPL => blk: {
+                    const result = self.Y +% 1;
+                    self.Y = result;
+
+                    self.set_flag(.ZERO, result == 0);
+                    self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+                    break :blk 2;
+                },
+
+                .JMP_ABS => blk: {
+                    const addr = self.fetch_word();
+                    self.PC = addr;
+
+                    break :blk 3;
+                },
+                .JMP_IND => blk: {
+                    const vector = self.fetch_word();
+
+                    const lo = self.read_byte(vector);
+
+                    // An original 6502 has does not correctly fetch the target address if the indirect vector falls on a page boundary
+                    // (e.g. $xxFF where xx is any value from $00 to $FF).
+                    // In this case fetches the LSB from $xxFF as expected but takes the MSB from $xx00.
+
+                    const hi_addr = if ((vector & 0x00FF) == 0x00FF)
+                        vector & 0xFF00
+                    else
+                        vector +% 1;
+
+                    const hi = self.read_byte(hi_addr);
+
+                    self.PC = (@as(u16, hi) << 8) | lo;
+
+                    break :blk 5;
+                },
+
+                .JSR_ABS => blk: {
+                    const target = self.fetch_word();
+                    self.push_word(self.PC -% 1);
+                    self.PC = target;
+
+                    break :blk 6;
                 },
 
                 .LDA_IM => blk: {
@@ -500,27 +724,27 @@ pub fn CPU(comptime Bus: type) type {
                 },
                 .LDA_ZP => blk: {
                     const target = self.fetch_byte();
-                    self._lda(target);
+                    self._ld(&self.A, target);
 
                     break :blk 3;
                 },
                 .LDA_ZP_X => blk: {
                     const operand = self.fetch_byte();
                     const target: u8 = operand +% self.X;
-                    self._lda(target);
+                    self._ld(&self.A, target);
 
                     break :blk 4;
                 },
                 .LDA_ABS => blk: {
                     const operand = self.fetch_word();
-                    self._lda(operand);
+                    self._ld(&self.A, operand);
 
                     break :blk 4;
                 },
                 .LDA_ABS_X => blk: {
                     const operand = self.fetch_word();
                     const addr = operand +% self.X;
-                    self._lda(addr);
+                    self._ld(&self.A, addr);
 
                     const extra: u8 = if (page_crossed(operand, addr)) 1 else 0;
                     break :blk 4 + extra;
@@ -528,7 +752,7 @@ pub fn CPU(comptime Bus: type) type {
                 .LDA_ABS_Y => blk: {
                     const operand = self.fetch_word();
                     const addr = operand +% self.Y;
-                    self._lda(addr);
+                    self._ld(&self.A, addr);
 
                     const extra: u8 = if (page_crossed(operand, addr)) 1 else 0;
                     break :blk 4 + extra;
@@ -537,7 +761,7 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.fetch_byte();
                     const addr = operand +% self.X;
                     const target = self.read_word_zp(addr);
-                    self._lda(target);
+                    self._ld(&self.A, target);
 
                     break :blk 6;
                 },
@@ -545,19 +769,307 @@ pub fn CPU(comptime Bus: type) type {
                     const operand = self.fetch_byte();
                     const addr = self.read_word_zp(operand);
                     const target = addr +% self.Y;
-                    self._lda(target);
+                    self._ld(&self.A, target);
 
                     const extra: u8 = if (page_crossed(addr, target)) 1 else 0;
                     break :blk 5 + extra;
                 },
 
-                .JSR_ABS => blk: {
-                    const target = self.fetch_word();
-                    self.push_word(self.PC -% 1);
-                    self.PC = target;
+                .LDX_IM => blk: {
+                    self.X = self.fetch_byte();
+                    self.set_flag(.ZERO, self.X == 0);
+                    self.set_flag(.NEGATIVE, (self.X & (1 << 7)) != 0);
+
+                    break :blk 2;
+                },
+                .LDX_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    self._ld(&self.X, addr);
+                    break :blk 3;
+                },
+
+                .LDX_ZP_Y => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.Y;
+                    self._ld(&self.X, addr);
+                    break :blk 4;
+                },
+
+                .LDX_ABS => blk: {
+                    const addr = self.fetch_word();
+                    self._ld(&self.X, addr);
+                    break :blk 4;
+                },
+
+                .LDX_ABS_Y => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.Y;
+                    self._ld(&self.X, addr);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+
+                .LDY_IM => blk: {
+                    const operand = self.fetch_byte();
+                    self.Y = operand;
+                    self.set_flag(.ZERO, self.Y == 0);
+                    self.set_flag(.NEGATIVE, (self.Y & (1 << 7)) != 0);
+
+                    break :blk 2;
+                },
+                .LDY_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    self._ld(&self.Y, addr);
+
+                    break :blk 3;
+                },
+                .LDY_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    self._ld(&self.Y, addr);
+
+                    break :blk 4;
+                },
+                .LDY_ABS => blk: {
+                    const addr = self.fetch_word();
+                    self._ld(&self.Y, addr);
+
+                    break :blk 4;
+                },
+
+                .LDY_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    self._ld(&self.Y, addr);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+
+                .LSR_ACC => blk: {
+                    self.A = self._lsr(self.A);
+
+                    break :blk 2;
+                },
+                .LSR_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    const result = self._lsr(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 5;
+                },
+                .LSR_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._lsr(operand);
+                    self.write_byte(addr, result);
 
                     break :blk 6;
                 },
+                .LSR_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    const result = self._lsr(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+
+                .LSR_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._lsr(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 7;
+                },
+
+                .NOP_IMPL => blk: {
+                    break :blk 2;
+                },
+
+                .ORA_IM => blk: {
+                    const operand = self.fetch_byte();
+                    self._ora(operand);
+
+                    break :blk 2;
+                },
+                .ORA_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    self._ora(operand);
+
+                    break :blk 3;
+                },
+                .ORA_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    self._ora(operand);
+
+                    break :blk 4;
+                },
+                .ORA_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    self._ora(operand);
+
+                    break :blk 4;
+                },
+                .ORA_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    self._ora(operand);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+                .ORA_ABS_Y => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.Y;
+                    const operand = self.read_byte(addr);
+                    self._ora(operand);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+                .ORA_IND_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const target = self.read_word_zp(addr);
+                    const operand = self.read_byte(target);
+                    self._ora(operand);
+
+                    break :blk 6;
+                },
+                .ORA_IND_Y => blk: {
+                    const operand_addr = self.fetch_byte();
+                    const base = self.read_word_zp(operand_addr);
+
+                    const target = base +% self.Y;
+                    const operand = self.read_byte(target);
+                    self._ora(operand);
+
+                    const extra: u8 = if (page_crossed(base, target)) 1 else 0;
+                    break :blk 5 + extra;
+                },
+
+                .PHA_IMPL => blk: {
+                    self.push_byte(self.A);
+
+                    break :blk 3;
+                },
+                .PHP_IMPL => blk: {
+                    const status = self.status | @intFromEnum(StatusFlag.BREAK) | @intFromEnum(StatusFlag.UNUSED);
+                    self.push_byte(status);
+
+                    break :blk 3;
+                },
+                .PLA_IMPL => blk: {
+                    self.A = self.pop_byte();
+
+                    self.set_flag(.ZERO, self.A == 0);
+                    self.set_flag(.NEGATIVE, (self.A & 1 << 7) != 0);
+
+                    break :blk 4;
+                },
+                .PLP_IMPL => blk: {
+                    self.status = self.pop_byte();
+
+                    break :blk 4;
+                },
+
+                .ROL_ACC => blk: {
+                    self.A = self._rol(self.A);
+
+                    break :blk 2;
+                },
+                .ROL_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    const result = self._rol(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 5;
+                },
+                .ROL_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._rol(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+                .ROL_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    const result = self._rol(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+                .ROL_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._rol(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 7;
+                },
+                .ROR_ACC => blk: {
+                    self.A = self._ror(self.A);
+
+                    break :blk 2;
+                },
+                .ROR_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    const result = self._ror(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 5;
+                },
+                .ROR_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._ror(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+                .ROR_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    const result = self._ror(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 6;
+                },
+                .ROR_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    const result = self._ror(operand);
+                    self.write_byte(addr, result);
+
+                    break :blk 7;
+                },
+
+                .RTI_IMPL => blk: {
+                    self.status = self.pop_byte();
+                    self.PC = self.pop_word();
+
+                    break :blk 6;
+                },
+
                 .RTS_IMPL => blk: {
                     const return_addr = self.pop_word();
                     self.PC = return_addr +% 1;
@@ -565,10 +1077,206 @@ pub fn CPU(comptime Bus: type) type {
                     break :blk 6;
                 },
 
-                else => {
-                    log.err("Instruction {} (0x{X}) is not handled", .{ op, op });
-                    self.print_state();
-                    @panic("");
+                .SBC_IM => blk: {
+                    const operand = self.fetch_byte();
+                    self._sbc(operand);
+
+                    break :blk 2;
+                },
+                .SBC_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    const operand = self.read_byte(addr);
+                    self._sbc(operand);
+                    break :blk 3;
+                },
+                .SBC_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    self._sbc(operand);
+
+                    break :blk 4;
+                },
+                .SBC_ABS => blk: {
+                    const addr = self.fetch_word();
+                    const operand = self.read_byte(addr);
+                    self._sbc(operand);
+
+                    break :blk 4;
+                },
+                .SBC_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    const operand = self.read_byte(addr);
+                    self._sbc(operand);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+                .SBC_ABS_Y => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.Y;
+                    const operand = self.read_byte(addr);
+                    self._sbc(operand);
+
+                    const extra: u8 = if (page_crossed(base, addr)) 1 else 0;
+                    break :blk 4 + extra;
+                },
+                .SBC_IND_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const target = self.read_word_zp(addr);
+                    const operand = self.read_byte(target);
+                    self._sbc(operand);
+
+                    break :blk 6;
+                },
+                .SBC_IND_Y => blk: {
+                    const operand_addr = self.fetch_byte();
+                    const base = self.read_word_zp(operand_addr);
+                    const target = base +% self.Y;
+                    const operand = self.read_byte(target);
+                    self._sbc(operand);
+
+                    const extra: u8 = if (page_crossed(base, target)) 1 else 0;
+                    break :blk 5 + extra;
+                },
+
+                .SEC_IMPL => blk: {
+                    self.set_flag(.CARRY, true);
+                    break :blk 2;
+                },
+                .SED_IMPL => blk: {
+                    self.set_flag(.DECIMAL, true);
+                    break :blk 2;
+                },
+                .SEI_IMPL => blk: {
+                    self.set_flag(.INTERRUPT_DISABLE, true);
+                    break :blk 2;
+                },
+
+                .STA_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    self.write_byte(addr, self.A);
+
+                    break :blk 3;
+                },
+                .STA_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    self.write_byte(addr, self.A);
+
+                    break :blk 4;
+                },
+                .STA_ABS => blk: {
+                    const addr = self.fetch_word();
+                    self.write_byte(addr, self.A);
+
+                    break :blk 4;
+                },
+                .STA_ABS_X => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.X;
+                    self.write_byte(addr, self.A);
+
+                    break :blk 5;
+                },
+                .STA_ABS_Y => blk: {
+                    const base = self.fetch_word();
+                    const addr = base +% self.Y;
+                    self.write_byte(addr, self.A);
+
+                    break :blk 5;
+                },
+                .STA_IND_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    const target = self.read_word_zp(addr);
+                    self.write_byte(target, self.A);
+
+                    break :blk 6;
+                },
+                .STA_IND_Y => blk: {
+                    const operand_addr = self.fetch_byte();
+                    const base = self.read_word_zp(operand_addr);
+                    const target = base +% self.Y;
+                    self.write_byte(target, self.A);
+
+                    break :blk 6;
+                },
+
+                .STX_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    self.write_byte(addr, self.X);
+
+                    break :blk 3;
+                },
+                .STX_ZP_Y => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.Y;
+                    self.write_byte(addr, self.X);
+
+                    break :blk 4;
+                },
+                .STX_ABS => blk: {
+                    const addr = self.fetch_word();
+                    self.write_byte(addr, self.X);
+
+                    break :blk 4;
+                },
+                .STY_ZP => blk: {
+                    const addr = self.fetch_byte();
+                    self.write_byte(addr, self.Y);
+
+                    break :blk 3;
+                },
+                .STY_ZP_X => blk: {
+                    const base = self.fetch_byte();
+                    const addr = base +% self.X;
+                    self.write_byte(addr, self.Y);
+
+                    break :blk 4;
+                },
+                .STY_ABS => blk: {
+                    const addr = self.fetch_word();
+                    self.write_byte(addr, self.Y);
+
+                    break :blk 4;
+                },
+
+                .TAX_IMPL => blk: {
+                    self.X = self.A;
+                    self.set_flag(.ZERO, self.X == 0);
+                    self.set_flag(.NEGATIVE, (self.X & (1 << 7)) != 0);
+                    break :blk 2;
+                },
+                .TAY_IMPL => blk: {
+                    self.Y = self.A;
+                    self.set_flag(.ZERO, self.Y == 0);
+                    self.set_flag(.NEGATIVE, (self.Y & (1 << 7)) != 0);
+                    break :blk 2;
+                },
+                .TSX_IMPL => blk: {
+                    self.X = self.SP;
+                    self.set_flag(.ZERO, self.X == 0);
+                    self.set_flag(.NEGATIVE, (self.X & (1 << 7)) != 0);
+                    break :blk 2;
+                },
+                .TXA_IMPL => blk: {
+                    self.A = self.X;
+                    self.set_flag(.ZERO, self.A == 0);
+                    self.set_flag(.NEGATIVE, (self.A & (1 << 7)) != 0);
+                    break :blk 2;
+                },
+                .TXS_IMPL => blk: {
+                    self.SP = self.X;
+                    break :blk 2;
+                },
+                .TYA_IMPL => blk: {
+                    self.A = self.Y;
+                    self.set_flag(.ZERO, self.A == 0);
+                    self.set_flag(.NEGATIVE, (self.A & (1 << 7)) != 0);
+                    break :blk 2;
                 },
             };
         }
@@ -588,18 +1296,19 @@ pub fn CPU(comptime Bus: type) type {
             log.info("CPU Y register: 0x{X}", .{self.Y});
             log.info("CPU SP register: 0x{X}", .{self.SP});
             log.info("CPU status register: 0b{b}", .{self.status});
+            log.info("Last executed OP: {}", .{LAST_OP});
         }
 
         pub fn print_stack(self: *const Self) void {
             log.info("--- Stack Trace ---", .{});
 
-            if (self.SP == Bus.STACK_START) {
+            if (self.SP == Bus.STACK_RESET) {
                 log.info("[Stack Empty]", .{});
                 return;
             }
 
             var addr: u16 = @as(u16, self.SP + 1) + 0x0100;
-            const end_addr: u16 = Bus.STACK_START + 0x0100;
+            const end_addr: u16 = Bus.STACK_RESET + 0x0100;
 
             while (addr <= end_addr) : (addr +%= 1) {
                 const value = self.read_byte(addr);
@@ -610,10 +1319,10 @@ pub fn CPU(comptime Bus: type) type {
             }
         }
 
-        inline fn _lda(self: *Self, target: u16) void {
-            self.A = self.read_byte(target);
-            self.set_flag(.ZERO, self.A == 0);
-            self.set_flag(.NEGATIVE, (self.A & 1 << 7) != 0);
+        inline fn _ld(self: *Self, reg: *u8, target: u16) void {
+            reg.* = self.read_byte(target);
+            self.set_flag(.ZERO, reg.* == 0);
+            self.set_flag(.NEGATIVE, (reg.* & (1 << 7)) != 0);
         }
 
         inline fn _adc(self: *Self, operand: u8) void {
@@ -644,7 +1353,6 @@ pub fn CPU(comptime Bus: type) type {
             return result;
         }
 
-        // Returns cycle count to add
         inline fn _bnc(self: *Self, condition: bool) u8 {
             const offset: i8 = @bitCast(self.fetch_byte());
 
@@ -654,10 +1362,17 @@ pub fn CPU(comptime Bus: type) type {
                 self.PC = @bitCast(@as(i16, @bitCast(old_PC)) +% offset);
 
                 const extra: u8 = if (page_crossed(old_PC, self.PC)) 1 else 0;
-                return 3 + extra;
+                return 1 + extra;
             }
 
-            return 2;
+            return 0;
+        }
+
+        inline fn _bit(self: *Self, operand: u8) void {
+            self.set_flag(.ZERO, (self.A & operand) == 0);
+
+            self.set_flag(.NEGATIVE, (operand & (1 << 7)) != 0);
+            self.set_flag(.OVERFLOW, (operand & (1 << 6)) != 0);
         }
 
         inline fn _cmp(self: *Self, reg_val: u8, operand: u8) void {
@@ -665,6 +1380,88 @@ pub fn CPU(comptime Bus: type) type {
             const result = reg_val -% operand;
             self.set_flag(.ZERO, result == 0);
             self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+        }
+
+        inline fn _dec(self: *Self, operand: u8) u8 {
+            const result = operand -% 1;
+
+            self.set_flag(.ZERO, (result == 0));
+            self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+            return result;
+        }
+
+        inline fn _eor(self: *Self, operand: u8) void {
+            self.A ^= operand;
+            self.set_flag(.ZERO, self.A == 0);
+            self.set_flag(.NEGATIVE, (self.A & (1 << 7)) != 0);
+        }
+
+        inline fn _inc(self: *Self, operand: u8) u8 {
+            const result = operand +% 1;
+
+            self.set_flag(.ZERO, (result == 0));
+            self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+            return result;
+        }
+
+        inline fn _lsr(self: *Self, operand: u8) u8 {
+            self.set_flag(.CARRY, (operand & 1) != 0);
+
+            const result = operand >> 1;
+
+            self.set_flag(.ZERO, result == 0);
+            self.set_flag(.NEGATIVE, false);
+
+            return result;
+        }
+
+        inline fn _ora(self: *Self, operand: u8) void {
+            self.A |= operand;
+            self.set_flag(.ZERO, self.A == 0);
+            self.set_flag(.NEGATIVE, (self.A & (1 << 7)) != 0);
+        }
+
+        inline fn _rol(self: *Self, operand: u8) u8 {
+            const old_carry: u8 = self.get_flag(.CARRY);
+
+            self.set_flag(.CARRY, (operand & (1 << 7)) != 0);
+
+            const result = (operand << 1) | old_carry;
+
+            self.set_flag(.ZERO, result == 0);
+            self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+            return result;
+        }
+
+        inline fn _ror(self: *Self, operand: u8) u8 {
+            const old_carry: u8 = self.get_flag(.CARRY);
+
+            self.set_flag(.CARRY, (operand & 1) != 0);
+
+            const result = (operand >> 1) | (old_carry << 7);
+
+            self.set_flag(.ZERO, result == 0);
+            self.set_flag(.NEGATIVE, (result & (1 << 7)) != 0);
+
+            return result;
+        }
+
+        inline fn _sbc(self: *Self, operand: u8) void {
+            const inv = ~operand;
+
+            const sum = @as(u16, self.A) + @as(u16, inv) + self.get_flag(.CARRY);
+
+            self.set_flag(.CARRY, sum > 0xFF);
+
+            const overflow = ((self.A ^ sum) & (inv ^ sum) & (1 << 7)) != 0;
+            self.set_flag(.OVERFLOW, overflow);
+
+            self.A = @truncate(sum);
+            self.set_flag(.ZERO, self.A == 0);
+            self.set_flag(.NEGATIVE, (self.A & (1 << 7)) != 0);
         }
     };
 }

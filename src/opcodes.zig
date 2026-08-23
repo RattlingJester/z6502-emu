@@ -213,6 +213,4 @@ pub const Op = enum(u8) {
     TXA_IMPL = 0x8A,
     TXS_IMPL = 0x9A,
     TYA_IMPL = 0x98,
-
-    _,
 };
