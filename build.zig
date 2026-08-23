@@ -20,16 +20,27 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
     });
 
-    const tests_mod = b.createModule(.{
+    const unit_tests_mod = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = .Debug,
         .strip = false,
     });
 
-    const tests = b.addTest(.{
-        .root_module = tests_mod,
+    const unit_tests = b.addTest(.{
+        .root_module = unit_tests_mod,
         .name = "tests",
+    });
+
+    const functional_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/func_test.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .strip = false,
+        .imports = &.{.{
+            .name = "emu",
+            .module = lib_mod,
+        }},
     });
 
     const exe_mod = b.createModule(.{
@@ -50,10 +61,18 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
     });
 
+    const ftest_exe = b.addExecutable(.{
+        .name = "ftest",
+        .root_module = functional_test_mod,
+        .linkage = .static,
+    });
+
     b.installArtifact(exe);
-    b.installArtifact(tests);
+    b.installArtifact(unit_tests);
+    b.installArtifact(ftest_exe);
 
     const run = b.addRunArtifact(exe);
+    const run_ftest = b.addRunArtifact(ftest_exe);
 
     if (b.args) |args| {
         run.addArgs(args);
@@ -61,4 +80,7 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "run app");
     run_step.dependOn(&run.step);
+
+    const run_ftest_step = b.step("ftest", "run functional test");
+    run_ftest_step.dependOn(&run_ftest.step);
 }

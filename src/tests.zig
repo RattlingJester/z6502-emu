@@ -24,7 +24,7 @@ const TestBus = struct {
     }
 };
 
-const CPU = emu.CPU(TestBus);
+const CPU = emu.CPU(TestBus, .{});
 
 fn setup(program: []const u8) struct { bus: TestBus, cpu: CPU } {
     var bus = TestBus{};

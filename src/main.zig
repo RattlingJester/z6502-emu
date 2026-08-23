@@ -47,7 +47,7 @@ pub fn main() void {
     var elapsed_cycles: u16 = 0;
 
     var bus = MemoryBus{ .ram = rom };
-    var cpu = emu.CPU(MemoryBus).init(&bus);
+    var cpu = emu.CPU(MemoryBus, .{}).init(&bus);
 
     cpu.reset();
 

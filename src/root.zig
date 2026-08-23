@@ -7,6 +7,10 @@ pub const Op = opcodes.Op;
 
 var LAST_OP: Op = undefined;
 
+pub const CpuOptions = struct {
+    decimal_mode: bool = false,
+};
+
 pub const StatusFlag = enum(u8) {
     CARRY = 1 << 0,
     ZERO = 1 << 1,
@@ -18,7 +22,7 @@ pub const StatusFlag = enum(u8) {
     NEGATIVE = 1 << 7,
 };
 
-pub fn CPU(comptime Bus: type) type {
+pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
     return struct {
         const Self = @This();
 
@@ -102,13 +106,13 @@ pub fn CPU(comptime Bus: type) type {
         }
 
         pub fn push_word(self: *Self, value: u16) void {
-            self.push_byte(@truncate(value & 0xFF));
             self.push_byte(@truncate(value >> 8));
+            self.push_byte(@truncate(value & 0xFF));
         }
 
         pub fn pop_word(self: *Self) u16 {
-            const hi: u16 = self.pop_byte();
             const lo: u16 = self.pop_byte();
+            const hi: u16 = self.pop_byte();
 
             return (hi << 8) | lo;
         }
@@ -355,11 +359,13 @@ pub fn CPU(comptime Bus: type) type {
                 },
 
                 .BRK_IMPL => blk: {
-                    self.push_word(self.PC);
-                    self.push_byte(self.status);
+                    const status = self.status | @intFromEnum(StatusFlag.BREAK) | @intFromEnum(StatusFlag.UNUSED);
+
+                    self.push_word(self.PC +% 1);
+                    self.push_byte(status);
 
                     self.PC = self.read_word(Bus.IRQ_VECTOR);
-                    self.set_flag(.BREAK, true);
+                    self.set_flag(.INTERRUPT_DISABLE, true);
 
                     break :blk 7;
                 },
@@ -1326,12 +1332,53 @@ pub fn CPU(comptime Bus: type) type {
         }
 
         inline fn _adc(self: *Self, operand: u8) void {
+            if (comptime options.decimal_mode) {
+                if (self.get_flag(.DECIMAL) == 1) {
+                    self._adc_decimal(operand);
+                    return;
+                }
+            }
+
             const sum: u16 = @as(u16, self.A) + @as(u16, operand) + self.get_flag(.CARRY);
             self.set_flag(.CARRY, sum > 0xFF);
             const overflow = ((self.A ^ sum) & (operand ^ sum) & 1 << 7) != 0;
             self.set_flag(.OVERFLOW, overflow);
 
             self.A = @truncate(sum);
+            self.set_flag(.ZERO, self.A == 0);
+            self.set_flag(.NEGATIVE, (self.A & 1 << 7) != 0);
+        }
+
+        inline fn _adc_decimal(self: *Self, operand: u8) void {
+            const carry_in = self.get_flag(.CARRY);
+            const a_lo: u4 = @truncate(self.A);
+            const op_lo: u4 = @truncate(operand);
+
+            var lo = @as(u8, a_lo) + op_lo + carry_in;
+            var lo_carry: u8 = 0;
+            if (lo > 9) {
+                lo += 6;
+                lo_carry = 1;
+            }
+
+            const a_hi: u4 = @truncate(self.A >> 4);
+            const op_hi: u4 = @truncate(operand >> 4);
+            var hi = @as(u8, a_hi) + op_hi + lo_carry;
+
+            var hi_carry: u8 = 0;
+            if (hi > 9) {
+                hi += 6;
+                hi_carry = 1;
+            }
+
+            const bin_sum: u8 = @truncate(@as(u16, self.A) + operand + carry_in);
+            const overflow = ((self.A ^ bin_sum) & (operand ^ bin_sum) & 0x80) != 0;
+            self.set_flag(.OVERFLOW, overflow);
+
+            const result: u8 = ((hi & 0x0F) << 4) | (lo & 0x0F);
+            self.A = result;
+
+            self.set_flag(.CARRY, hi_carry == 1);
             self.set_flag(.ZERO, self.A == 0);
             self.set_flag(.NEGATIVE, (self.A & 1 << 7) != 0);
         }
@@ -1450,18 +1497,49 @@ pub fn CPU(comptime Bus: type) type {
         }
 
         inline fn _sbc(self: *Self, operand: u8) void {
-            const inv = ~operand;
+            if (comptime options.decimal_mode) {
+                if (self.get_flag(.DECIMAL) == 1) {
+                    self._sbc_decimal(operand);
+                    return;
+                }
+            }
 
-            const sum = @as(u16, self.A) + @as(u16, inv) + self.get_flag(.CARRY);
+            self._adc(~operand);
+        }
 
-            self.set_flag(.CARRY, sum > 0xFF);
+        inline fn _sbc_decimal(self: *Self, operand: u8) void {
+            const carry_in = self.get_flag(.CARRY);
+            const a_lo: u4 = @truncate(self.A);
+            const op_lo: u4 = @truncate(operand);
 
-            const overflow = ((self.A ^ sum) & (inv ^ sum) & (1 << 7)) != 0;
+            var lo: i16 = @as(i16, a_lo) - @as(i16, op_lo) - (1 - @as(i16, carry_in));
+            var lo_borrow: i16 = 0;
+            if (lo < 0) {
+                lo -= 6;
+                lo_borrow = 1;
+            }
+
+            const a_hi: u4 = @truncate(self.A >> 4);
+            const op_hi: u4 = @truncate(operand >> 4);
+            var hi: i16 = @as(i16, a_hi) - @as(i16, op_hi) - lo_borrow;
+
+            if (hi < 0) {
+                hi -= 6;
+            }
+
+            const bin_sum: u16 = @as(u16, self.A) +% ~operand +% carry_in;
+            const bin_result: u8 = @truncate(bin_sum);
+
+            const overflow = ((self.A ^ bin_result) & (~operand ^ bin_result) & 0x80) != 0;
             self.set_flag(.OVERFLOW, overflow);
 
-            self.A = @truncate(sum);
+            const lo_digit: u8 = @intCast(@mod(lo, 16));
+            const hi_digit: u8 = @intCast(@mod(hi, 16));
+            self.A = (hi_digit << 4) | lo_digit;
+
+            self.set_flag(.CARRY, bin_sum > 0xFF);
             self.set_flag(.ZERO, self.A == 0);
-            self.set_flag(.NEGATIVE, (self.A & (1 << 7)) != 0);
+            self.set_flag(.NEGATIVE, (self.A & 0x80) != 0);
         }
     };
 }

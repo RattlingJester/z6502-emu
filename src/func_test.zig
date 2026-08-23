@@ -1,0 +1,63 @@
+const std = @import("std");
+const emu = @import("emu");
+const log = std.log.scoped(.ftest);
+
+const MemoryBus = struct {
+    const Self = @This();
+
+    pub const STACK_START = 0xFF; // [0x0100...0x01FF]
+    pub const STACK_RESET = 0xFD;
+    pub const RESET_VECTOR = 0xFFFC;
+    pub const IRQ_VECTOR = 0xFFFE;
+    pub const MEM_SIZE = 1024 * 64;
+
+    ram: [MEM_SIZE]u8 = undefined,
+
+    pub fn read(self: *Self, addr: u16) u8 {
+        if (addr < MEM_SIZE)
+            return self.ram[addr]
+        else
+            @panic("Array access out of bounds");
+    }
+
+    pub fn write(self: *Self, addr: u16, value: u8) void {
+        if (addr < MEM_SIZE)
+            self.ram[addr] = value
+        else
+            @panic("Array access out of bounds");
+    }
+};
+
+const rom = @embedFile("6502_functional_test.bin");
+
+pub fn main() void {
+    var bus = MemoryBus{ .ram = undefined };
+    @memcpy(bus.ram[0..rom.len], rom);
+
+    var cpu = emu.CPU(MemoryBus, .{ .decimal_mode = true }).init(&bus);
+    cpu.PC = 0x0400;
+
+    var total_cycles: u64 = 0;
+    var last_pc: u16 = 0xFFFF;
+    var iterations: u64 = 0;
+
+    while (true) {
+        const pc_before = cpu.PC;
+        const cycles = cpu.step();
+        total_cycles += cycles;
+        iterations += 1;
+
+        if (cpu.PC == pc_before) {
+            log.info("Trapped at PC=0x{X:04} after {} instructions, {} cycles", .{ cpu.PC, iterations, total_cycles });
+            break;
+        }
+        last_pc = pc_before;
+
+        if (iterations > 200_000_000) {
+            log.err("Exceeded iteration safety limit without trapping", .{});
+            break;
+        }
+    }
+
+    cpu.print_state();
+}
