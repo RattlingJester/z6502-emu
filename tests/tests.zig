@@ -3,7 +3,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const emu = @import("root.zig");
+const emu = @import("emu");
 
 const TestBus = struct {
     const Self = @This();

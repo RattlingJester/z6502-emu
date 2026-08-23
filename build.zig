@@ -2,16 +2,13 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .Debug,
-    });
+    const optimize = b.standardOptimizeOption(.{});
 
     const lib_mod = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
         .single_threaded = true,
-        .strip = false,
     });
 
     const lib = b.addLibrary(.{
@@ -21,10 +18,13 @@ pub fn build(b: *std.Build) void {
     });
 
     const unit_tests_mod = b.createModule(.{
-        .root_source_file = b.path("src/tests.zig"),
+        .root_source_file = b.path("tests/tests.zig"),
         .target = target,
         .optimize = .Debug,
-        .strip = false,
+        .imports = &.{.{
+            .name = "emu",
+            .module = lib_mod,
+        }},
     });
 
     const unit_tests = b.addTest(.{
@@ -33,10 +33,9 @@ pub fn build(b: *std.Build) void {
     });
 
     const functional_test_mod = b.createModule(.{
-        .root_source_file = b.path("src/func_test.zig"),
+        .root_source_file = b.path("tests/func_test.zig"),
         .target = target,
         .optimize = .Debug,
-        .strip = false,
         .imports = &.{.{
             .name = "emu",
             .module = lib_mod,
@@ -44,7 +43,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("examples/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{.{
@@ -53,10 +52,8 @@ pub fn build(b: *std.Build) void {
         }},
     });
 
-    exe_mod.linkLibrary(lib);
-
     const exe = b.addExecutable(.{
-        .name = "6502-emu",
+        .name = "6502-emu-example",
         .root_module = exe_mod,
         .linkage = .static,
     });
@@ -67,12 +64,14 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
     });
 
+    b.installArtifact(lib);
     b.installArtifact(exe);
     b.installArtifact(unit_tests);
     b.installArtifact(ftest_exe);
 
     const run = b.addRunArtifact(exe);
     const run_ftest = b.addRunArtifact(ftest_exe);
+    const run_utest = b.addRunArtifact(unit_tests);
 
     if (b.args) |args| {
         run.addArgs(args);
@@ -83,4 +82,7 @@ pub fn build(b: *std.Build) void {
 
     const run_ftest_step = b.step("ftest", "run functional test");
     run_ftest_step.dependOn(&run_ftest.step);
+
+    const run_utest_step = b.step("utest", "run unit tests");
+    run_utest_step.dependOn(&run_utest.step);
 }

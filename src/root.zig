@@ -2,7 +2,7 @@ const std = @import("std");
 const opcodes = @import("opcodes.zig");
 const log = std.log.scoped(.emulator);
 
-pub const RomBuilder = @import("builder.zig").RomBuilder;
+pub const RomBuilder = @import("rom_builder.zig").RomBuilder;
 pub const Op = opcodes.Op;
 
 var LAST_OP: Op = undefined;

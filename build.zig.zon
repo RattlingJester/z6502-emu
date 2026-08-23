@@ -2,6 +2,11 @@
     .name = .emu_6502,
     .version = "0.0.1",
     .minimum_zig_version = "0.16.0",
-    .paths = .{ "src", "build.zig" },
+    .paths = .{
+        "src",
+        "tests",
+        "examples",
+        "build.zig",
+    },
     .fingerprint = 0x16957f8e7f1407e6,
 }

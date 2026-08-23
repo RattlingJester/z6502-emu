@@ -5,7 +5,7 @@ pub fn RomBuilder(comptime Bus: type) type {
     return struct {
         const Self = @This();
 
-        bytes: [Bus.MEM_SIZE]u8 = @splat(0),
+        bytes: [Bus.MEM_SIZE]u8 = @splat(0xEA),
         pos: u16 = 0,
 
         pub fn org(self: *Self, addr: u16) *Self {
