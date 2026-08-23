@@ -13,18 +13,12 @@ const MemoryBus = struct {
 
     ram: [MEM_SIZE]u8 = undefined,
 
-    pub fn read(self: *Self, addr: u16) u8 {
-        if (addr < MEM_SIZE)
-            return self.ram[addr]
-        else
-            @panic("Array access out of bounds");
+    pub fn read(self: *Self, addr: u16) !u8 {
+        return self.ram[addr];
     }
 
-    pub fn write(self: *Self, addr: u16, value: u8) void {
-        if (addr < MEM_SIZE)
-            self.ram[addr] = value
-        else
-            @panic("Array access out of bounds");
+    pub fn write(self: *Self, addr: u16, value: u8) !void {
+        self.ram[addr] = value;
     }
 };
 

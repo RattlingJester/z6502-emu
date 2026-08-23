@@ -16,10 +16,10 @@ const TestBus = struct {
 
     ram: [MEM_SIZE]u8 = [_]u8{0} ** MEM_SIZE,
 
-    pub fn read(self: *Self, addr: u16) u8 {
+    pub fn read(self: *Self, addr: u16) !u8 {
         return self.ram[addr];
     }
-    pub fn write(self: *Self, addr: u16, value: u8) void {
+    pub fn write(self: *Self, addr: u16, value: u8) !void {
         self.ram[addr] = value;
     }
 };
