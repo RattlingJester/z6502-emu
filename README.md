@@ -11,10 +11,15 @@ Used AI to generate the unit tests, all other code is hand-written.
 I've included a simple utility in `src/rom_builder.zig` to build test machine code programs. Usage is shown in `examples/main.zig`. 
 
 ## Building
-Do `zig build` to build the library and examples. Outputs executables (tests and example) and a static library.
+* Do `zig build` to build the library and examples. Outputs executables (tests and example) and a static library.
 
-Do `zig build run` to build and run the example (`examples/main.zig`).
+* Do `zig build run` to build and run the example (`examples/main.zig`).
 
-Do `zig build ftest` to buid and run Klaus Dormann's functional test.
+* Do `zig build ftest` to build and run Klaus Dormann's functional test.
 
-Do `zig build utest --summary all` to build and run unit tests.
+* Do `zig build utest --summary all` to build and run unit tests.
+
+## Wozmon example
+To build the wozmon itself you'll need [cc65](https://github.com/cc65/cc65/) assembler and linker.
+
+Do `make` to build the wozmon and then `zig build wozmon` to build and run the example.

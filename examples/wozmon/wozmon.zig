@@ -52,7 +52,8 @@ const Bus = struct {
             0xD013 => self.dsp_cr = value,
             0xD012 => {
                 // Print once DSPCR has switched into data-register mode (bit 2 set).
-                if ((self.dsp_cr & 0x04) != 0) {
+                if ((self.dsp_cr & 1 << 3) != 0) {
+                    // Convert to 7 bit ASCII character
                     const ascii_char = value & 0x7F;
 
                     self.stdout_writer.interface.writeAll(&.{ascii_char}) catch |err| {
@@ -75,7 +76,7 @@ const Bus = struct {
         // Convert lowercase to uppercase
         const upper_char = if (char >= 'a' and char <= 'z') char - 32 else char;
 
-        self.next_key = upper_char | 0x80;
+        self.next_key = upper_char | 1 << 7;
     }
 };
 
@@ -104,7 +105,7 @@ fn keyboard_listener(io: std.Io, bus: *Bus) !void {
     while (true) {
         const char = try stdin.takeByte();
 
-        // In case terminal sends only \n
+        // In case terminal sends only \n. Maybe not needed?
         const processed: u8 = if (char == '\n') '\r' else char;
         bus.push_keyboard_input(processed);
 

@@ -1,4 +1,4 @@
-$(shell mkdir out 2>nul)
+$(shell mkdir -p out)
 
 all: wozmon.bin
 
