@@ -1,3 +1,5 @@
+// --- AI GENERATED ---
+
 const std = @import("std");
 const testing = std.testing;
 
@@ -7,6 +9,7 @@ const TestBus = struct {
     const Self = @This();
 
     pub const STACK_START = 0xFF;
+    pub const STACK_RESET = 0xFD;
     pub const RESET_VECTOR = 0xFFFC;
     pub const IRQ_VECTOR = 0xFFFE;
     pub const MEM_SIZE = 1024 * 64;
@@ -355,8 +358,8 @@ test "ASL sets zero flag" {
 
 test "BCC_REL not taken" {
     var bus = TestBus{};
-    var cpu = run(&bus, &.{ 0x90, 0x10 }); // BCC +16
-    cpu.set_flag(.CARRY, true); // carry set -> branch not taken
+    var cpu = run(&bus, &.{ 0x90, 0x10 });
+    cpu.set_flag(.CARRY, true);
     const cycles = cpu.step();
     try testing.expectEqual(@as(u16, 0x8002), cpu.PC);
     try testing.expectEqual(@as(u8, 2), cycles);
@@ -794,4 +797,741 @@ test "reset loads PC from reset vector and sets SP/status defaults" {
     try testing.expectEqual(@as(u8, 0), cpu.A);
     try testing.expectEqual(@as(u8, 0), cpu.X);
     try testing.expectEqual(@as(u8, 0), cpu.Y);
+}
+
+// --- LDX / LDY ---
+test "LDX_IM" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xA2, 0x42 });
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "LDX_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xA6, 0x10 });
+    bus.ram[0x10] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "LDX_ZP_Y" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xB6, 0x10 });
+    cpu.Y = 0x02;
+    bus.ram[0x12] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "LDX_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xAE, 0x00, 0x20 });
+    bus.ram[0x2000] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "LDX_ABS_Y page cross" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xBE, 0xFF, 0x20 });
+    cpu.Y = 0x01;
+    bus.ram[0x2100] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "LDX_IM sets zero and negative flags" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xA2, 0x80 });
+    _ = cpu.step();
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.NEGATIVE));
+}
+
+test "LDY_IM" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xA0, 0x42 });
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.Y);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "LDY_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xA4, 0x10 });
+    bus.ram[0x10] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.Y);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "LDY_ZP_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xB4, 0x10 });
+    cpu.X = 0x02;
+    bus.ram[0x12] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.Y);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "LDY_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xAC, 0x00, 0x20 });
+    bus.ram[0x2000] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.Y);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "LDY_ABS_X page cross" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xBC, 0xFF, 0x20 });
+    cpu.X = 0x01;
+    bus.ram[0x2100] = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+
+// --- STA / STX / STY ---
+test "STA_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x85, 0x10 });
+    cpu.A = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x10]);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "STA_ZP_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x95, 0x10 });
+    cpu.A = 0x42;
+    cpu.X = 0x02;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x12]);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "STA_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x8D, 0x00, 0x20 });
+    cpu.A = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2000]);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "STA_ABS_X always costs 5, no page-cross variance" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x9D, 0x00, 0x20 });
+    cpu.A = 0x42;
+    cpu.X = 0x05;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2005]);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "STA_ABS_Y always costs 5" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x99, 0xFF, 0x20 }); // page-crossing address, still 5
+    cpu.A = 0x42;
+    cpu.Y = 0x01;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "STA_IND_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x81, 0x10 });
+    cpu.X = 0x04;
+    bus.ram[0x14] = 0x00;
+    bus.ram[0x15] = 0x30;
+    cpu.A = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x3000]);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+test "STA_IND_Y always costs 6" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x91, 0x10 });
+    bus.ram[0x10] = 0xFF;
+    bus.ram[0x11] = 0x30; // page-crossing target, still fixed cost
+    cpu.Y = 0x01;
+    cpu.A = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x3100]);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+
+test "STX_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x86, 0x10 });
+    cpu.X = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x10]);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "STX_ZP_Y" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x96, 0x10 });
+    cpu.X = 0x42;
+    cpu.Y = 0x02;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x12]);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "STX_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x8E, 0x00, 0x20 });
+    cpu.X = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2000]);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "STY_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x84, 0x10 });
+    cpu.Y = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x10]);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "STY_ZP_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x94, 0x10 });
+    cpu.Y = 0x42;
+    cpu.X = 0x02;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x12]);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+test "STY_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x8C, 0x00, 0x20 });
+    cpu.Y = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2000]);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// --- INC / DEC / INX / INY / DEX / DEY ---
+test "INC_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xE6, 0x10 });
+    bus.ram[0x10] = 0x41;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x10]);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "INC_ZP wraps 0xFF to 0x00 and sets zero flag" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xE6, 0x10 });
+    bus.ram[0x10] = 0xFF;
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0x00), bus.ram[0x10]);
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.ZERO));
+}
+test "INC_ZP_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xF6, 0x10 });
+    cpu.X = 0x02;
+    bus.ram[0x12] = 0x41;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x12]);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+test "INC_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xEE, 0x00, 0x20 });
+    bus.ram[0x2000] = 0x41;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2000]);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+test "INC_ABS_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xFE, 0x00, 0x20 });
+    cpu.X = 0x05;
+    bus.ram[0x2005] = 0x41;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2005]);
+    try testing.expectEqual(@as(u8, 7), cycles);
+}
+
+test "DEC_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xC6, 0x10 });
+    bus.ram[0x10] = 0x43;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x10]);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "DEC_ZP wraps 0x00 to 0xFF and sets negative flag" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xC6, 0x10 });
+    bus.ram[0x10] = 0x00;
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0xFF), bus.ram[0x10]);
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.NEGATIVE));
+}
+test "DEC_ZP_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xD6, 0x10 });
+    cpu.X = 0x02;
+    bus.ram[0x12] = 0x43;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x12]);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+test "DEC_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xCE, 0x00, 0x20 });
+    bus.ram[0x2000] = 0x43;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2000]);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+test "DEC_ABS_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xDE, 0x00, 0x20 });
+    cpu.X = 0x05;
+    bus.ram[0x2005] = 0x43;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), bus.ram[0x2005]);
+    try testing.expectEqual(@as(u8, 7), cycles);
+}
+
+test "INX_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xE8});
+    cpu.X = 0x41;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "INX_IMPL wraps 0xFF -> 0x00" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xE8});
+    cpu.X = 0xFF;
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0x00), cpu.X);
+}
+test "INY_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xC8});
+    cpu.Y = 0x41;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.Y);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "DEX_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xCA});
+    cpu.X = 0x43;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "DEX_IMPL wraps 0x00 -> 0xFF" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xCA});
+    cpu.X = 0x00;
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0xFF), cpu.X);
+}
+test "DEY_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x88});
+    cpu.Y = 0x43;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.Y);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+
+// --- EOR / ORA ---
+test "EOR_IM" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x49, 0xFF });
+    cpu.A = 0x0F;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0xF0), cpu.A);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "EOR_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x45, 0x10 });
+    bus.ram[0x10] = 0xFF;
+    cpu.A = 0x0F;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0xF0), cpu.A);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "EOR_ABS_X page cross" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x5D, 0xFF, 0x20 });
+    cpu.X = 0x01;
+    bus.ram[0x2100] = 0xFF;
+    cpu.A = 0x0F;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "EOR_IND_X" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x41, 0x10 });
+    cpu.X = 0x04;
+    bus.ram[0x14] = 0x00;
+    bus.ram[0x15] = 0x30;
+    bus.ram[0x3000] = 0xFF;
+    cpu.A = 0x0F;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0xF0), cpu.A);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+
+test "ORA_IM" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x09, 0x0F });
+    cpu.A = 0xF0;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0xFF), cpu.A);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "ORA_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x05, 0x10 });
+    bus.ram[0x10] = 0x0F;
+    cpu.A = 0xF0;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0xFF), cpu.A);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "ORA_IND_Y" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x11, 0x10 });
+    bus.ram[0x10] = 0x00;
+    bus.ram[0x11] = 0x30;
+    cpu.Y = 0x05;
+    bus.ram[0x3005] = 0x0F;
+    cpu.A = 0xF0;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0xFF), cpu.A);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+
+// --- LSR / ROL / ROR ---
+test "LSR_ACC shifts right, old bit0 into carry, bit7 always clear" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x4A});
+    cpu.A = 0b1000_0011;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0b0100_0001), cpu.A);
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.CARRY));
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.NEGATIVE));
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "LSR_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x46, 0x10 });
+    bus.ram[0x10] = 0b0000_0010;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0b0000_0001), bus.ram[0x10]);
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.CARRY));
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+
+test "ROL_ACC rotates old carry into bit0, old bit7 into carry" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x2A});
+    cpu.A = 0b1000_0001;
+    cpu.set_flag(.CARRY, true);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0b0000_0011), cpu.A); // old bit7 -> carry, old carry -> bit0
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.CARRY));
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "ROL_ACC with carry clear does not set bit0" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x2A});
+    cpu.A = 0b0000_0001;
+    cpu.set_flag(.CARRY, false);
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0b0000_0010), cpu.A);
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.CARRY));
+}
+test "ROL_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x26, 0x10 });
+    bus.ram[0x10] = 0b1000_0000;
+    cpu.set_flag(.CARRY, false);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0b0000_0000), bus.ram[0x10]);
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.CARRY));
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.ZERO));
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+
+test "ROR_ACC rotates old carry into bit7, old bit0 into carry" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x6A});
+    cpu.A = 0b0000_0011;
+    cpu.set_flag(.CARRY, true);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0b1000_0001), cpu.A);
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.CARRY));
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.NEGATIVE));
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "ROR_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x66, 0x10 });
+    bus.ram[0x10] = 0b0000_0001;
+    cpu.set_flag(.CARRY, false);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0b0000_0000), bus.ram[0x10]);
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.CARRY));
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+
+// --- JMP ---
+test "JMP_ABS" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x4C, 0x00, 0x90 });
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u16, 0x9000), cpu.PC);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "JMP_IND normal case" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x6C, 0x00, 0x30 }); // JMP ($3000)
+    bus.ram[0x3000] = 0x00;
+    bus.ram[0x3001] = 0x90;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u16, 0x9000), cpu.PC);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "JMP_IND reproduces the page-boundary hardware bug" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x6C, 0xFF, 0x30 }); // JMP ($30FF)
+    bus.ram[0x30FF] = 0x00; // low byte, correct location
+    bus.ram[0x3100] = 0x90; // high byte, WRONG location per real hardware bug
+    bus.ram[0x3000] = 0x12; // high byte read from wrapped location instead
+    const cycles = cpu.step();
+    // Real 6502 wraps within page $30, reading high byte from $3000 (0x12),
+    // not from $3100 (0x90) as naive pointer math would suggest.
+    try testing.expectEqual(@as(u16, 0x1200), cpu.PC);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+
+// --- RTI ---
+test "RTI_IMPL pops status then PC" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x40});
+    cpu.push_word(0x1234);
+    cpu.push_byte(0b1010_1010);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u16, 0x1234), cpu.PC);
+    try testing.expectEqual(@as(u8, 0b1010_1010), cpu.status);
+    try testing.expectEqual(@as(u8, 6), cycles);
+}
+
+// --- SEC / SED / SEI ---
+test "SEC_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x38});
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.CARRY));
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "SED_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xF8});
+    _ = cpu.step();
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.DECIMAL));
+}
+test "SEI_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x78});
+    _ = cpu.step();
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.INTERRUPT_DISABLE));
+}
+
+// --- Transfers ---
+test "TAX_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xAA});
+    cpu.A = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.X);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "TAY_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xA8});
+    cpu.A = 0x42;
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.Y);
+}
+test "TXA_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x8A});
+    cpu.X = 0x42;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.A);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "TYA_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x98});
+    cpu.Y = 0x42;
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.A);
+}
+test "TSX_IMPL" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xBA});
+    const cycles = cpu.step();
+    try testing.expectEqual(cpu.SP, cpu.X); // reset default SP == 0xFD
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "TXS_IMPL does not affect flags" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x9A});
+    cpu.X = 0x00; // would normally set ZERO if flags were touched
+    cpu.set_flag(.ZERO, false);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x00), cpu.SP);
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.ZERO)); // untouched
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+
+// --- Stack ops ---
+test "PHA_IMPL / PLA_IMPL round-trip" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x48, 0x68 }); // PHA, PLA
+    cpu.A = 0x42;
+    const push_cycles = cpu.step();
+    cpu.A = 0x00; // clobber to prove PLA restores it
+    const pop_cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x42), cpu.A);
+    try testing.expectEqual(@as(u8, 3), push_cycles);
+    try testing.expectEqual(@as(u8, 4), pop_cycles);
+}
+test "PLA_IMPL sets zero and negative flags" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x68});
+    cpu.push_byte(0x00);
+    _ = cpu.step();
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.ZERO));
+}
+test "PHP_IMPL always pushes BREAK set" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x08});
+    cpu.status = 0b0000_0000; // BREAK explicitly clear
+    _ = cpu.step();
+    const pushed = cpu.pop_byte();
+    try testing.expect((pushed & @intFromEnum(emu.StatusFlag.BREAK)) != 0);
+}
+test "PLP_IMPL restores status exactly" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0x28});
+    cpu.push_byte(0b1100_0011);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0b1100_0011), cpu.status);
+    try testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// --- NOP ---
+test "NOP_IMPL advances PC by 1 and costs 2 cycles" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{0xEA});
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u16, 0x8001), cpu.PC);
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+
+// --- SBC ---
+test "SBC_IM basic subtraction with carry set (no borrow)" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xE9, 0x10 });
+    cpu.A = 0x50;
+    cpu.set_flag(.CARRY, true); // carry set means "no borrow"
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x40), cpu.A);
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.CARRY)); // no borrow occurred
+    try testing.expectEqual(@as(u8, 2), cycles);
+}
+test "SBC_IM with carry clear subtracts an extra 1 (borrow-in)" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xE9, 0x10 });
+    cpu.A = 0x50;
+    cpu.set_flag(.CARRY, false);
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0x3F), cpu.A);
+}
+test "SBC_IM underflow clears carry (borrow occurred)" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xE9, 0x01 });
+    cpu.A = 0x00;
+    cpu.set_flag(.CARRY, true);
+    _ = cpu.step();
+    try testing.expectEqual(@as(u8, 0xFF), cpu.A);
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.CARRY)); // borrow occurred
+}
+test "SBC_IM sets overflow on signed underflow (-128 - 1)" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xE9, 0x01 });
+    cpu.A = 0x80; // -128 signed
+    cpu.set_flag(.CARRY, true);
+    _ = cpu.step();
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.OVERFLOW));
+}
+test "SBC_ZP" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xE5, 0x10 });
+    bus.ram[0x10] = 0x10;
+    cpu.A = 0x50;
+    cpu.set_flag(.CARRY, true);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x40), cpu.A);
+    try testing.expectEqual(@as(u8, 3), cycles);
+}
+test "SBC_ABS_X page cross" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xFD, 0xFF, 0x20 });
+    cpu.X = 0x01;
+    bus.ram[0x2100] = 0x10;
+    cpu.A = 0x50;
+    cpu.set_flag(.CARRY, true);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+test "SBC_IND_Y" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0xF1, 0x10 });
+    bus.ram[0x10] = 0x00;
+    bus.ram[0x11] = 0x30;
+    cpu.Y = 0x05;
+    bus.ram[0x3005] = 0x10;
+    cpu.A = 0x50;
+    cpu.set_flag(.CARRY, true);
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u8, 0x40), cpu.A);
+    try testing.expectEqual(@as(u8, 5), cycles);
+}
+
+// --- BIT ---
+test "BIT_ZP sets zero when A & M == 0, copies bits 7 and 6 from M" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x24, 0x10 });
+    bus.ram[0x10] = 0b1100_0000;
+    cpu.A = 0b0011_1111; // A & M == 0
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.ZERO));
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.NEGATIVE));
+    try testing.expectEqual(@as(u1, 1), cpu.get_flag(.OVERFLOW));
+    try testing.expectEqual(@as(u8, 3), cycles);
+    try testing.expectEqual(@as(u8, 0b0011_1111), cpu.A);
+}
+test "BIT_ABS clears zero when bits overlap" {
+    var bus = TestBus{};
+    var cpu = run(&bus, &.{ 0x2C, 0x00, 0x20 });
+    bus.ram[0x2000] = 0b0000_0001;
+    cpu.A = 0b0000_0001;
+    const cycles = cpu.step();
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.ZERO));
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.NEGATIVE));
+    try testing.expectEqual(@as(u1, 0), cpu.get_flag(.OVERFLOW));
+    try testing.expectEqual(@as(u8, 4), cycles);
 }
