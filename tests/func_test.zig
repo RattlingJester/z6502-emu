@@ -31,8 +31,7 @@ const MemoryBus = struct {
 const rom = @embedFile("6502_functional_test.bin");
 
 pub fn main() void {
-    var bus = MemoryBus{ .ram = undefined };
-    @memcpy(bus.ram[0..rom.len], rom);
+    var bus = MemoryBus{ .ram = rom.* };
 
     var cpu = emu.CPU(MemoryBus, .{ .decimal_mode = true }).init(&bus);
     cpu.PC = 0x0400;
@@ -54,7 +53,7 @@ pub fn main() void {
         last_pc = pc_before;
 
         if (iterations > 200_000_000) {
-            log.err("Exceeded iteration safety limit without trapping", .{});
+            log.err("Exceeded iteration limit", .{});
             break;
         }
     }
