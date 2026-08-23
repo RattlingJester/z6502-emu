@@ -122,6 +122,6 @@ fn keyboard_listener(io: std.Io, bus: *Bus) !void {
         bus.push_keyboard_input(processed);
 
         // Yielding
-        try io.sleep(std.Io.Duration.fromNanoseconds(0), .awake);
+        try io.sleep(.fromNanoseconds(0), .awake);
     }
 }
