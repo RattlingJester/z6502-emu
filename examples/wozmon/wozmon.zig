@@ -2,10 +2,6 @@ const std = @import("std");
 const emu = @import("emu");
 const log = std.log.scoped(.wozmon);
 
-const rom = @embedFile("out/wozmon.bin");
-
-const Cpu = emu.CPU(Bus, .{});
-
 const Bus = struct {
     const Self = @This();
 
@@ -15,34 +11,48 @@ const Bus = struct {
     pub const IRQ_VECTOR = 0xFFFE;
     pub const MEM_SIZE = 1024 * 64;
 
-    ram: [MEM_SIZE]u8 = undefined,
-    dsp_cr: u8 = 0,
+    ram: [MEM_SIZE]u8 = @embedFile("out/wozmon.bin").*,
 
     io: std.Io,
+    alloc: std.mem.Allocator,
+
     stdout_buf: [64]u8 = undefined,
     stdout_writer: std.Io.File.Writer,
 
-    next_key: ?u8 = null,
+    keys_queue: std.Deque(u8),
+    dsp_cr: u8 = 0,
 
-    pub fn init(io: std.Io) Self {
-        var self: Self = .{ .io = io, .stdout_writer = undefined };
+    pub fn init(io: std.Io, alloc: std.mem.Allocator) !Self {
+        var self: Self = .{
+            .io = io,
+            .alloc = alloc,
+            .ram = undefined,
+            .stdout_buf = undefined,
+            .stdout_writer = undefined,
+            .keys_queue = try .initCapacity(alloc, 64),
+        };
+
         self.stdout_writer = std.Io.File.stdout().writerStreaming(io, &self.stdout_buf);
+
         return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.keys_queue.deinit(self.alloc);
     }
 
     pub fn read(self: *Self, addr: u16) !u8 {
         switch (addr) {
             0xD010 => {
                 // If a key is staged, return it and clear the ready status
-                if (self.next_key) |char| {
-                    self.next_key = null;
+                if (self.keys_queue.popFront()) |char| {
                     return char;
                 }
                 return 0x00;
             },
             0xD011 => {
                 // If we have a key waiting, set Bit 7 high for Wozmon
-                return if (self.next_key != null) 1 << 7 else 0x00;
+                return if (self.keys_queue.len > 0) 1 << 7 else 0x00;
             },
             0xD013 => return self.dsp_cr,
             else => return self.ram[addr],
@@ -73,22 +83,19 @@ const Bus = struct {
             else => self.ram[addr] = value,
         }
     }
-
-    pub fn push_keyboard_input(self: *Self, char: u8) void {
-        // Convert lowercase to uppercase
-        const upper_char = if (char >= 'a' and char <= 'z') char - 32 else char;
-
-        self.next_key = upper_char | 1 << 7;
-    }
 };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
 
-    var bus = Bus.init(io);
-    bus.ram = rom.*;
+    var kb_buf: [64]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&kb_buf);
+    const alloc = fba.allocator();
 
-    var cpu = Cpu.init(&bus);
+    var bus = try Bus.init(io, alloc);
+    defer bus.deinit();
+
+    var cpu = emu.CPU(Bus, .{}).init(&bus);
     cpu.reset();
 
     var kb_task = io.async(keyboard_listener, .{ io, &bus });
@@ -118,8 +125,12 @@ fn keyboard_listener(io: std.Io, bus: *Bus) !void {
         const char = try stdin.takeByte();
 
         // In case terminal sends only \n. Maybe not needed?
-        const processed: u8 = if (char == '\n') '\r' else char;
-        bus.push_keyboard_input(processed);
+        const pr: u8 = if (char == '\n') '\r' else char;
+
+        // Convert lowercase to uppercase
+        const upper_char = if (pr >= 'a' and pr <= 'z') pr - 32 else pr;
+
+        try bus.keys_queue.pushBack(bus.alloc, (upper_char | 1 << 7));
 
         // Yielding
         try io.sleep(.fromNanoseconds(0), .awake);
