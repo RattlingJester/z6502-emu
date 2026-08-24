@@ -65,7 +65,7 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
         }
 
         pub fn read_byte(self: *const Self, addr: u16) u8 {
-            return self.bus.read(addr) catch unreachable; // TODO: proper error handling
+            return self.bus.read(addr) catch {}; // TODO: proper error handling
         }
 
         pub fn read_word(self: *const Self, addr: u16) u16 {
@@ -83,7 +83,7 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
         }
 
         pub fn write_byte(self: *Self, addr: u16, value: u8) void {
-            self.bus.write(addr, value) catch unreachable; // TODO: proper error handling
+            self.bus.write(addr, value) catch {}; // TODO: proper error handling
         }
 
         pub fn write_word(self: *Self, addr: u16, value: u16) void {
