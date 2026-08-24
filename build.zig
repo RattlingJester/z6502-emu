@@ -44,6 +44,12 @@ pub fn build(b: *std.Build) void {
         }},
     });
 
+    const ftest_exe = b.addExecutable(.{
+        .name = "ftest",
+        .root_module = functional_test_mod,
+        .linkage = .static,
+    });
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("examples/main.zig"),
         .target = target,
@@ -78,20 +84,33 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
     });
 
-    const ftest_exe = b.addExecutable(.{
-        .name = "ftest",
-        .root_module = functional_test_mod,
+    const basic_mod = b.createModule(.{
+        .root_source_file = b.path("examples/msbasic/msbasic.zig"),
+        .target = target,
+        .optimize = optimize,
+        .single_threaded = false,
+        .imports = &.{.{
+            .name = "emu",
+            .module = lib_mod,
+        }},
+    });
+
+    const basic_exe = b.addExecutable(.{
+        .name = "basic",
+        .root_module = basic_mod,
         .linkage = .static,
     });
 
     b.installArtifact(lib);
     b.installArtifact(exe);
     b.installArtifact(wozmon_exe);
+    b.installArtifact(basic_exe);
     b.installArtifact(unit_tests);
     b.installArtifact(ftest_exe);
 
     const run = b.addRunArtifact(exe);
     const run_wozmon = b.addRunArtifact(wozmon_exe);
+    const run_basic = b.addRunArtifact(basic_exe);
     const run_ftest = b.addRunArtifact(ftest_exe);
     const run_utest = b.addRunArtifact(unit_tests);
 
@@ -104,6 +123,9 @@ pub fn build(b: *std.Build) void {
 
     const run_wozmon_step = b.step("wozmon", "run wozmon");
     run_wozmon_step.dependOn(&run_wozmon.step);
+
+    const run_basic_step = b.step("basic", "run basic");
+    run_basic_step.dependOn(&run_basic.step);
 
     const run_ftest_step = b.step("ftest", "run functional test");
     run_ftest_step.dependOn(&run_ftest.step);

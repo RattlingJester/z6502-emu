@@ -1,3 +1,5 @@
 .zig-cache
 zig-out
 examples/wozmon/out
+examples/msbasic/out
+examples/msbasic/asm
