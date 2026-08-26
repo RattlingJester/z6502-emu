@@ -32,7 +32,7 @@ pub fn RomBuilder(comptime Bus: type) type {
 
         pub fn reset_vector(self: *Self, addr: u16) *Self {
             const saved = self.pos;
-            self.pos = Bus.RESET_VECTOR;
+            self.pos = Bus.RESET_VECTOR_ADDR;
             _ = self.word(addr);
             self.pos = saved;
             return self;

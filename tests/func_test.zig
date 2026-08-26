@@ -6,8 +6,8 @@ const MemoryBus = struct {
     const Self = @This();
 
     pub const STACK_START = 0xFF; // [0x0100...0x01FF]
-    pub const STACK_RESET = 0xFD;
-    pub const RESET_VECTOR = 0xFFFC;
+    pub const SP_RESET = 0xFD;
+    pub const RESET_VECTOR_ADDR = 0xFFFC;
     pub const IRQ_VECTOR = 0xFFFE;
     pub const MEM_SIZE = 1024 * 64;
 

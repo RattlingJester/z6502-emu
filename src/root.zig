@@ -26,7 +26,7 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
     return struct {
         const Self = @This();
 
-        PC: u16 = Bus.RESET_VECTOR,
+        PC: u16 = Bus.RESET_VECTOR_ADDR,
 
         A: u8 = 0,
         X: u8 = 0,
@@ -42,12 +42,12 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
         }
 
         pub fn reset(self: *Self) void {
-            self.PC = self.read_word(Bus.RESET_VECTOR);
+            self.PC = self.read_word(Bus.RESET_VECTOR_ADDR);
             self.A = 0;
             self.X = 0;
             self.Y = 0;
 
-            self.SP = Bus.STACK_RESET;
+            self.SP = Bus.SP_RESET;
             self.status = 0b00110100;
         }
 
@@ -1308,13 +1308,13 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
         pub fn print_stack(self: *const Self) void {
             log.info("--- Stack Trace ---", .{});
 
-            if (self.SP == Bus.STACK_RESET) {
+            if (self.SP == Bus.SP_RESET) {
                 log.info("[Stack Empty]", .{});
                 return;
             }
 
             var addr: u16 = @as(u16, self.SP + 1) + 0x0100;
-            const end_addr: u16 = Bus.STACK_RESET + 0x0100;
+            const end_addr: u16 = Bus.SP_RESET + 0x0100;
 
             while (addr <= end_addr) : (addr +%= 1) {
                 const value = self.read_byte(addr);
