@@ -1,17 +1,22 @@
 const std = @import("std");
 const emu = @import("emu");
-const log = std.log.scoped(.wozmon);
+const log = std.log.scoped(.basic);
+
+const ROM_START = 0x1E5A;
+const COLD_START_ADDR = 0x4065;
+
+const msbasic = @embedFile("out/msbasic.bin");
 
 const Bus = struct {
     const Self = @This();
 
     pub const STACK_START = 0xFF; // [0x0100...0x01FF]
-    pub const SP_RESET = 0xFD;
+    pub const SP_RESET = 0xFC;
     pub const RESET_VECTOR_ADDR = 0xFFFC;
     pub const IRQ_VECTOR = 0xFFFE;
     pub const MEM_SIZE = 1024 * 64;
 
-    ram: [MEM_SIZE]u8 = @embedFile("out/msbasic.bin").*,
+    ram: [MEM_SIZE]u8 = undefined,
 
     io: std.Io,
     alloc: std.mem.Allocator,
@@ -61,7 +66,9 @@ const Bus = struct {
 
     pub fn write(self: *Self, addr: u16, value: u8) !void {
         switch (addr) {
-            0xD013 => self.dsp_cr = value,
+            0xD013 => {
+                self.dsp_cr = value;
+            },
             0xD012 => {
                 // Print once DSPCR has switched into data-register mode (bit 2 set).
                 if ((self.dsp_cr & (1 << 2)) != 0) {
@@ -95,8 +102,13 @@ pub fn main(init: std.process.Init) !void {
     var bus = try Bus.init(io, alloc);
     defer bus.deinit();
 
+    @memcpy(bus.ram[ROM_START..][0..msbasic.len], msbasic);
+
     var cpu = emu.CPU(Bus, .{}).init(&bus);
     cpu.reset();
+
+    cpu.SP = 0xFC;
+    cpu.PC = COLD_START_ADDR;
 
     var kb_task = io.async(keyboard_listener, .{ io, &bus });
     defer kb_task.cancel(io) catch {};
@@ -107,6 +119,8 @@ pub fn main(init: std.process.Init) !void {
         var cycles_executed: u32 = 0;
 
         while (cycles_executed < CYCLES) {
+            std.debug.print("PC={X:0>4} OP={X:0>2}\n", .{ cpu.PC, bus.ram[cpu.PC] });
+
             const cycles = cpu.step();
             cycles_executed += cycles;
         }
