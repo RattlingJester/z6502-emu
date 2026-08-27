@@ -2,10 +2,10 @@ const std = @import("std");
 const emu = @import("emu");
 const log = std.log.scoped(.basic);
 
-const ROM_START = 0x1E5A;
-const COLD_START_ADDR = 0x4065;
+const ROM_START = 0x1000; // Start of ROM from kim.cfg
+const COLD_START_ADDR = 0x3F09; // Address from msbasic.lbl (.COLD_START)
 
-const msbasic = @embedFile("out/msbasic.bin");
+const rom = @embedFile("out/msbasic.bin");
 
 const Bus = struct {
     const Self = @This();
@@ -16,7 +16,7 @@ const Bus = struct {
     pub const IRQ_VECTOR = 0xFFFE;
     pub const MEM_SIZE = 1024 * 64;
 
-    ram: [MEM_SIZE]u8 = undefined,
+    ram: [MEM_SIZE]u8 = @splat(0),
 
     io: std.Io,
     alloc: std.mem.Allocator,
@@ -25,7 +25,6 @@ const Bus = struct {
     stdout_writer: std.Io.File.Writer,
 
     keys_queue: std.Deque(u8),
-    dsp_cr: u8 = 0,
 
     pub fn init(io: std.Io, alloc: std.mem.Allocator) !Self {
         var self: Self = .{
@@ -49,44 +48,32 @@ const Bus = struct {
     pub fn read(self: *Self, addr: u16) !u8 {
         switch (addr) {
             0xD010 => {
-                // If a key is staged, return it and clear the ready status
+                // If a key is staged, return it
                 if (self.keys_queue.popFront()) |char| {
                     return char;
                 }
                 return 0x00;
             },
             0xD011 => {
-                // If we have a key waiting, set Bit 7 high for Wozmon
+                // If we have a key waiting, set Bit 7 high
                 return if (self.keys_queue.len > 0) 1 << 7 else 0x00;
             },
-            0xD013 => return self.dsp_cr,
             else => return self.ram[addr],
         }
     }
 
     pub fn write(self: *Self, addr: u16, value: u8) !void {
         switch (addr) {
-            0xD013 => {
-                self.dsp_cr = value;
-            },
             0xD012 => {
-                // Print once DSPCR has switched into data-register mode (bit 2 set).
-                if ((self.dsp_cr & (1 << 2)) != 0) {
-                    // Convert to 7 bit ASCII character
-                    const ascii_char = value & 0x7F;
+                // Print the character
+                self.stdout_writer.interface.writeAll(&.{value}) catch |err| {
+                    log.err("stdout write failed: {}", .{err});
+                };
 
-                    self.stdout_writer.interface.writeAll(&.{ascii_char}) catch |err| {
-                        log.err("stdout write failed: {}", .{err});
-                    };
-
-                    // Add newline after carriage return
-                    if (ascii_char == '\r') {
-                        try self.stdout_writer.interface.writeAll(&.{'\n'});
-                    }
-
-                    try self.stdout_writer.interface.flush();
-                }
+                try self.stdout_writer.interface.flush();
             },
+            // ROM is read-only
+            // ROM_START...(ROM_START + rom.len - 1) => {},
             else => self.ram[addr] = value,
         }
     }
@@ -102,13 +89,12 @@ pub fn main(init: std.process.Init) !void {
     var bus = try Bus.init(io, alloc);
     defer bus.deinit();
 
-    @memcpy(bus.ram[ROM_START..][0..msbasic.len], msbasic);
+    std.debug.print("ROM len: {}\n", .{rom.len});
+    @memcpy(bus.ram[ROM_START..][0..rom.len], rom);
 
     var cpu = emu.CPU(Bus, .{}).init(&bus);
+    cpu.write_word(Bus.RESET_VECTOR_ADDR, COLD_START_ADDR); // Setting COLD_START as start address
     cpu.reset();
-
-    cpu.SP = 0xFC;
-    cpu.PC = COLD_START_ADDR;
 
     var kb_task = io.async(keyboard_listener, .{ io, &bus });
     defer kb_task.cancel(io) catch {};
@@ -119,8 +105,6 @@ pub fn main(init: std.process.Init) !void {
         var cycles_executed: u32 = 0;
 
         while (cycles_executed < CYCLES) {
-            std.debug.print("PC={X:0>4} OP={X:0>2}\n", .{ cpu.PC, bus.ram[cpu.PC] });
-
             const cycles = cpu.step();
             cycles_executed += cycles;
         }
@@ -138,13 +122,7 @@ fn keyboard_listener(io: std.Io, bus: *Bus) !void {
     while (true) {
         const char = try stdin.takeByte();
 
-        // In case terminal sends only \n. Maybe not needed?
-        const pr: u8 = if (char == '\n') '\r' else char;
-
-        // Convert lowercase to uppercase
-        const upper_char = if (pr >= 'a' and pr <= 'z') pr - 32 else pr;
-
-        try bus.keys_queue.pushBack(bus.alloc, (upper_char | 1 << 7));
+        try bus.keys_queue.pushBack(bus.alloc, char);
 
         // Yielding
         try io.sleep(.fromNanoseconds(0), .awake);

@@ -1,15 +1,15 @@
-.segment "IO"
+CHAR := $D010
+CHAR_READY := $D011
+CHAR_OUT := $D012
 
+.segment "MONCOUT"
 MONCOUT: 
-	pha
-	lda #$04
-	sta $D013
-	pla
-	sta $D012
+	sta CHAR_OUT
 	rts
 	
+.segment "MONRDKEY"
 MONRDKEY:
-	lda $D011
+	lda CHAR_READY
 	bpl MONRDKEY
-	lda $D010
+	lda CHAR
 	rts
