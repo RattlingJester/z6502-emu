@@ -26,8 +26,6 @@ const Bus = struct {
         var self: Self = .{
             .io = io,
             .alloc = alloc,
-            .ram = undefined,
-            .stdout_buf = undefined,
             .stdout_writer = undefined,
             .keys_queue = try .initCapacity(alloc, 64),
         };
@@ -65,7 +63,7 @@ const Bus = struct {
             0xD012 => {
                 // Print once DSPCR has switched into data-register mode (bit 2 set).
                 if ((self.dsp_cr & (1 << 2)) != 0) {
-                    // Convert to 7 bit ASCII character
+                    // Convert to 7 bit ASCII character (bit 7 is 1)
                     const ascii_char = value & 0x7F;
 
                     self.stdout_writer.interface.writeAll(&.{ascii_char}) catch |err| {
