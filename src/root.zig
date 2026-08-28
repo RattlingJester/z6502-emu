@@ -5,8 +5,6 @@ const log = std.log.scoped(.emulator);
 pub const RomBuilder = @import("rom_builder.zig").RomBuilder;
 pub const Op = opcodes.Op;
 
-var LAST_OP: Op = undefined;
-
 pub const CpuOptions = struct {
     decimal_mode: bool = false,
 };
@@ -37,6 +35,8 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
 
         bus: *Bus,
 
+        last_op: Op = undefined,
+
         pub fn init(bus: *Bus) Self {
             return .{ .bus = bus };
         }
@@ -65,7 +65,7 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
         }
 
         pub fn read_byte(self: *const Self, addr: u16) u8 {
-            return self.bus.read(addr) catch {}; // TODO: proper error handling
+            return self.bus.read(addr) catch @panic("Bus read returned error"); // TODO: proper error handling
         }
 
         pub fn read_word(self: *const Self, addr: u16) u16 {
@@ -83,7 +83,7 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
         }
 
         pub fn write_byte(self: *Self, addr: u16, value: u8) void {
-            self.bus.write(addr, value) catch {}; // TODO: proper error handling
+            self.bus.write(addr, value) catch @panic("Bus write returned error"); // TODO: proper error handling
         }
 
         pub fn write_word(self: *Self, addr: u16, value: u16) void {
@@ -133,7 +133,7 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
 
         /// Returns number of cycles it took to execute the instruction
         pub fn execute(self: *Self, op: Op) u8 {
-            LAST_OP = op;
+            self.last_op = op;
             return switch (op) {
                 .ADC_IM => blk: {
                     const operand = self.fetch_byte();
@@ -1302,7 +1302,7 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
             log.info("CPU Y register: 0x{X}", .{self.Y});
             log.info("CPU SP register: 0x{X}", .{self.SP});
             log.info("CPU status register: 0b{b}", .{self.status});
-            log.info("Last executed OP: {}", .{LAST_OP});
+            log.info("Last executed OP: {}", .{self.last_op});
         }
 
         pub fn print_stack(self: *const Self) void {
