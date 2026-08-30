@@ -47,7 +47,7 @@ const Bus = struct {
         self.keys_queue.deinit(self.alloc);
     }
 
-    pub fn read(self: *Self, addr: u16) !u8 {
+    pub fn read(self: *Self, addr: u16) u8 {
         switch (addr) {
             0xFFF0 => {
                 // If a key is staged, return it
@@ -64,7 +64,7 @@ const Bus = struct {
         }
     }
 
-    pub fn write(self: *Self, addr: u16, value: u8) !void {
+    pub fn write(self: *Self, addr: u16, value: u8) void {
         switch (addr) {
             0xFFF2 => {
                 // Print the character
@@ -72,7 +72,9 @@ const Bus = struct {
                     log.err("stdout write failed: {}", .{err});
                 };
 
-                try self.stdout_writer.interface.flush();
+                self.stdout_writer.interface.flush() catch |err| {
+                    log.err("stdout flush failed: {}", .{err});
+                };
             },
             // ROM is read-only
             ROM_START...(RAM_START - 1) => {},
@@ -105,7 +107,7 @@ pub fn main(init: std.process.Init) !void {
     defer kb_task.cancel(io) catch {};
 
     while (true) {
-        _ = cpu.step();
+        _ = try cpu.step();
     }
 }
 

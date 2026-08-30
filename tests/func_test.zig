@@ -13,18 +13,18 @@ const MemoryBus = struct {
 
     ram: [MEM_SIZE]u8 = undefined,
 
-    pub fn read(self: *Self, addr: u16) !u8 {
+    pub fn read(self: *Self, addr: u16) u8 {
         return self.ram[addr];
     }
 
-    pub fn write(self: *Self, addr: u16, value: u8) !void {
+    pub fn write(self: *Self, addr: u16, value: u8) void {
         self.ram[addr] = value;
     }
 };
 
 const rom = @embedFile("6502_functional_test.bin");
 
-pub fn main() void {
+pub fn main() !void {
     var bus = MemoryBus{ .ram = rom.* };
 
     var cpu = emu.CPU(MemoryBus, .{ .decimal_mode = true }).init(&bus);
@@ -36,7 +36,7 @@ pub fn main() void {
 
     while (true) {
         const pc_before = cpu.PC;
-        const cycles = cpu.step();
+        const cycles = try cpu.step();
         total_cycles += cycles;
         iterations += 1;
 

@@ -39,7 +39,7 @@ const Bus = struct {
         self.keys_queue.deinit(self.alloc);
     }
 
-    pub fn read(self: *Self, addr: u16) !u8 {
+    pub fn read(self: *Self, addr: u16) u8 {
         switch (addr) {
             0xD010 => {
                 // If a key is staged, return it and clear the ready status
@@ -57,7 +57,7 @@ const Bus = struct {
         }
     }
 
-    pub fn write(self: *Self, addr: u16, value: u8) !void {
+    pub fn write(self: *Self, addr: u16, value: u8) void {
         switch (addr) {
             0xD013 => self.dsp_cr = value,
             0xD012 => {
@@ -72,10 +72,14 @@ const Bus = struct {
 
                     // Add newline after carriage return
                     if (ascii_char == '\r') {
-                        try self.stdout_writer.interface.writeAll(&.{'\n'});
+                        self.stdout_writer.interface.writeAll(&.{value}) catch |err| {
+                            log.err("stdout write failed: {}", .{err});
+                        };
                     }
 
-                    try self.stdout_writer.interface.flush();
+                    self.stdout_writer.interface.flush() catch |err| {
+                        log.err("stdout flush failed: {}", .{err});
+                    };
                 }
             },
             else => self.ram[addr] = value,
@@ -105,7 +109,7 @@ pub fn main(init: std.process.Init) !void {
         var cycles_executed: u32 = 0;
 
         while (cycles_executed < CYCLES) {
-            const cycles = cpu.step();
+            const cycles = try cpu.step();
             cycles_executed += cycles;
         }
 

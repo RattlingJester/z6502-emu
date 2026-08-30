@@ -13,11 +13,11 @@ const MemoryBus = struct {
 
     ram: [MEM_SIZE]u8 = undefined,
 
-    pub fn read(self: *Self, addr: u16) !u8 {
+    pub fn read(self: *Self, addr: u16) u8 {
         return self.ram[addr];
     }
 
-    pub fn write(self: *Self, addr: u16, value: u8) !void {
+    pub fn write(self: *Self, addr: u16, value: u8) void {
         self.ram[addr] = value;
     }
 };
@@ -36,7 +36,7 @@ const rom = blk: {
         .build();
 };
 
-pub fn main() void {
+pub fn main() !void {
     var exec_instr: u8 = 6;
     var elapsed_cycles: u16 = 0;
 
@@ -46,7 +46,7 @@ pub fn main() void {
     cpu.reset();
 
     while (exec_instr > 0) {
-        elapsed_cycles += cpu.step();
+        elapsed_cycles += try cpu.step();
         exec_instr -= 1;
     }
 

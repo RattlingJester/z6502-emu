@@ -5,6 +5,10 @@ const log = std.log.scoped(.emulator);
 pub const RomBuilder = @import("rom_builder.zig").RomBuilder;
 pub const Op = opcodes.Op;
 
+pub const Error = error{
+    InvalidOpcode,
+};
+
 pub const CpuOptions = struct {
     decimal_mode: bool = false,
 };
@@ -51,6 +55,14 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
             self.status = 0b00110100;
         }
 
+        pub fn read_byte(self: *const Self, addr: u16) u8 {
+            return self.bus.read(addr);
+        }
+
+        pub fn write_byte(self: *Self, addr: u16, value: u8) void {
+            self.bus.write(addr, value);
+        }
+
         pub fn fetch_byte(self: *Self) u8 {
             const op = self.read_byte(self.PC);
             self.PC +%= 1;
@@ -62,10 +74,6 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
             const hi: u16 = self.fetch_byte();
 
             return (hi << 8) | lo;
-        }
-
-        pub fn read_byte(self: *const Self, addr: u16) u8 {
-            return self.bus.read(addr) catch @panic("Bus read returned error"); // TODO: proper error handling
         }
 
         pub fn read_word(self: *const Self, addr: u16) u16 {
@@ -80,10 +88,6 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
             const hi: u16 = self.read_byte(addr +% 1);
 
             return (hi << 8) | lo;
-        }
-
-        pub fn write_byte(self: *Self, addr: u16, value: u8) void {
-            self.bus.write(addr, value) catch @panic("Bus write returned error"); // TODO: proper error handling
         }
 
         pub fn write_word(self: *Self, addr: u16, value: u16) void {
@@ -1288,10 +1292,12 @@ pub fn CPU(comptime Bus: type, comptime options: CpuOptions) type {
         }
 
         /// Returns number of cycles it took to execute an instruction
-        pub fn step(self: *Self) u8 {
-            const op = self.fetch_byte();
+        pub fn step(self: *Self) Error!u8 {
+            const byte = self.fetch_byte();
+            const op = std.enums.fromInt(Op, byte) orelse
+                return Error.InvalidOpcode;
 
-            return self.execute(@enumFromInt(op));
+            return self.execute(op);
         }
 
         pub fn print_state(self: *const Self) void {
